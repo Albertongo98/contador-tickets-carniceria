@@ -177,6 +177,24 @@ class TicketManager:
         if ticket.folio in self.tickets:
             return False, f"Ticket {ticket.folio} ya existe", False
         
+        # Validar que el ticket esté en un rango razonable
+        if self.tickets:
+            folios_existentes = [int(f) for f in self.tickets.keys()]
+            folio_min_actual = min(folios_existentes)
+            folio_max_actual = max(folios_existentes)
+            folio_nuevo = int(ticket.folio)
+            
+            # Permitir tickets en el rango actual ±50 tickets
+            RANGO_MAXIMO = 50
+            
+            # Si el ticket está muy por debajo del rango actual
+            if folio_nuevo < folio_min_actual - RANGO_MAXIMO:
+                return False, f"Ticket {ticket.folio} está muy fuera de rango (muy antiguo). Rango actual: {folio_min_actual:03d}-{folio_max_actual:03d}", False
+            
+            # Si el ticket está muy por encima del rango actual
+            if folio_nuevo > folio_max_actual + RANGO_MAXIMO:
+                return False, f"Ticket {ticket.folio} está muy fuera de rango (muy adelantado). Rango actual: {folio_min_actual:03d}-{folio_max_actual:03d}", False
+        
         # Agregar ticket
         self.tickets[ticket.folio] = ticket
         fecha_str = ticket.fecha_hora.strftime('%Y-%m-%d')
