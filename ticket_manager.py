@@ -184,8 +184,8 @@ class TicketManager:
             folio_max_actual = max(folios_existentes)
             folio_nuevo = int(ticket.folio)
             
-            # Permitir tickets en el rango actual ±50 tickets
-            RANGO_MAXIMO = 50
+            # Permitir tickets en el rango actual ±10 tickets
+            RANGO_MAXIMO = 10
             
             # Si el ticket está muy por debajo del rango actual
             if folio_nuevo < folio_min_actual - RANGO_MAXIMO:
