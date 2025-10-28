@@ -6,13 +6,15 @@ from typing import Dict, List, Optional, Tuple
 import os
 
 class Ticket:
-    """Representa un ticket individual con folio, fecha/hora y monto"""
+    """Representa un ticket individual con folio, fecha/hora, monto y estado"""
     
-    def __init__(self, folio: str, fecha_hora: datetime, monto: float, codigo_original: str):
+    def __init__(self, folio: str, fecha_hora: datetime, monto: float, codigo_original: str, estado: str = "OK"):
         self.folio = folio
         self.fecha_hora = fecha_hora
         self.monto = monto
         self.codigo_original = codigo_original
+        # estado: "OK" | "CANCELADO"
+        self.estado = estado
     
     def __str__(self):
         return f"Ticket {self.folio}: {self.fecha_hora.strftime('%H:%M:%S')} - ${self.monto:.2f}"
@@ -165,7 +167,7 @@ class TicketManager:
             print(f"Error parseando código: {e}")
             return None
     
-    def agregar_ticket(self, codigo: str) -> Tuple[bool, str, bool]:
+    def agregar_ticket(self, codigo: str, cancelado: bool = False) -> Tuple[bool, str, bool]:
         """
         Agrega un ticket y retorna (éxito, mensaje, mostrar_amarillo)
         """
@@ -195,6 +197,10 @@ class TicketManager:
             if folio_nuevo > folio_max_actual + RANGO_MAXIMO:
                 return False, f"Ticket {ticket.folio} está muy fuera de rango (muy adelantado). Rango actual: {folio_min_actual:03d}-{folio_max_actual:03d}", False
         
+        # Si es cancelado, marcar estado
+        if cancelado:
+            ticket.estado = "CANCELADO"
+
         # Agregar ticket
         self.tickets[ticket.folio] = ticket
         fecha_str = ticket.fecha_hora.strftime('%Y-%m-%d')
@@ -208,7 +214,14 @@ class TicketManager:
         mostrar_amarillo = self._verificar_tickets_faltantes(ticket)
         
         self.guardar_datos()
-        return True, f"Ticket {ticket.folio} registrado correctamente", mostrar_amarillo
+        if cancelado:
+            return True, f"Ticket {ticket.folio} CANCELADO registrado", False
+        else:
+            return True, f"Ticket {ticket.folio} registrado correctamente", mostrar_amarillo
+
+    def agregar_ticket_cancelado(self, codigo: str) -> Tuple[bool, str, bool]:
+        """Atajo para agregar ticket marcado como CANCELADO"""
+        return self.agregar_ticket(codigo, cancelado=True)
     
     def _verificar_tickets_faltantes(self, nuevo_ticket: Ticket) -> bool:
         """
@@ -274,7 +287,7 @@ class TicketManager:
                 ticket = self.tickets[folio_str]
                 resultado.append({
                     'folio': folio_str,
-                    'status': 'OK',
+                    'status': 'CANCELADO' if getattr(ticket, 'estado', 'OK') == 'CANCELADO' else 'OK',
                     'hora': ticket.fecha_hora.strftime('%H:%M:%S'),
                     'monto': f"${ticket.monto:.2f}",
                     'horario_camaras': None
@@ -286,8 +299,9 @@ class TicketManager:
                 
                 horario_camaras = ""
                 if ticket_anterior and ticket_posterior:
-                    hora_inicio = ticket_anterior.fecha_hora - timedelta(minutes=5)
-                    hora_fin = ticket_posterior.fecha_hora + timedelta(minutes=5)
+                    # Nuevo criterio: desde la hora (minuto) del ticket anterior hasta 10 min después del posterior
+                    hora_inicio = ticket_anterior.fecha_hora.replace(second=0, microsecond=0)
+                    hora_fin = (ticket_posterior.fecha_hora + timedelta(minutes=10)).replace(second=0, microsecond=0)
                     horario_camaras = f"{hora_inicio.strftime('%H:%M')} - {hora_fin.strftime('%H:%M')}"
                 elif ticket_anterior:
                     hora_inicio = ticket_anterior.fecha_hora
@@ -361,8 +375,10 @@ class TicketManager:
         nuevo_turno = "tarde" if self.turno_actual == "mañana" else "mañana"
         
         # Generar reporte de cierre
-        total_tickets = len(self.tickets)
-        total_monto = sum(ticket.monto for ticket in self.tickets.values())
+        # Excluir cancelados del total y del monto
+        tickets_validos = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
+        total_tickets = len(tickets_validos)
+        total_monto = sum(t.monto for t in tickets_validos)
         
         reporte = f"""
 === CIERRE DE CAJA - TURNO {self.turno_actual.upper()} ===
@@ -413,7 +429,8 @@ Próximo turno: {nuevo_turno}
                     'folio': ticket.folio,
                     'fecha_hora': ticket.fecha_hora.isoformat(),
                     'monto': ticket.monto,
-                    'codigo_original': ticket.codigo_original
+                    'codigo_original': ticket.codigo_original,
+                    'estado': getattr(ticket, 'estado', 'OK')
                 }
             
             with open(self.data_file, 'w', encoding='utf-8') as f:
@@ -442,7 +459,8 @@ Próximo turno: {nuevo_turno}
                         ticket_data['folio'],
                         fecha_hora,
                         ticket_data['monto'],
-                        ticket_data['codigo_original']
+                        ticket_data['codigo_original'],
+                        ticket_data.get('estado', 'OK')
                     )
                     self.tickets[folio] = ticket
                     

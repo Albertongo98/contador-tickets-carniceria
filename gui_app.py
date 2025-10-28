@@ -16,6 +16,11 @@ class PantallaConfirmacion:
         self.ventana.resizable(False, False)
         self.ventana.transient(parent)
         self.ventana.grab_set()
+        # Forzar siempre visible sobre otras ventanas (solo esta confirmación)
+        try:
+            self.ventana.attributes("-topmost", True)
+        except Exception:
+            pass
         
         # Centrar en pantalla
         self.ventana.update_idletasks()
@@ -158,6 +163,33 @@ class AplicacionTickets:
             bd=3
         )
         btn_cierre.pack(side="left", padx=10)
+
+        # Botón para agregar ticket CANCELADO
+        btn_cancelado = tk.Button(
+            frame_botones,
+            text="➖ Agregar Cancelado",
+            command=self.procesar_ticket_cancelado,
+            font=("Arial", 12, "bold"),
+            bg="#f39c12",
+            fg="white",
+            width=18,
+            height=2,
+            relief="raised",
+            bd=3
+        )
+        btn_cancelado.pack(side="left", padx=10)
+
+        # Checkbox: Siempre visible (investigación: usa atributo topmost)
+        self.topmost_var = tk.BooleanVar(value=False)
+        chk_topmost = tk.Checkbutton(
+            self.root,
+            text="Siempre visible",
+            variable=self.topmost_var,
+            command=self.toggle_topmost,
+            bg="#f0f0f0",
+            font=("Arial", 10)
+        )
+        chk_topmost.pack(pady=(0, 10))
         
         # Estadísticas actuales
         self.frame_stats = tk.LabelFrame(
@@ -231,11 +263,31 @@ class AplicacionTickets:
                 
         except Exception as e:
             messagebox.showerror("Error", f"Error procesando ticket: {str(e)}")
+
+    def procesar_ticket_cancelado(self):
+        """Procesa el código actual como ticket CANCELADO"""
+        codigo = self.codigo_var.get().strip()
+        if not codigo:
+            messagebox.showwarning("Falta código", "Escanea o escribe el código a cancelar y vuelve a presionar el botón.")
+            self.entrada_codigo.focus_set()
+            return
+        try:
+            exito, mensaje, _ = self.ticket_manager.agregar_ticket_cancelado(codigo)
+            if exito:
+                PantallaConfirmacion(self.root, es_advertencia=True, mensaje=mensaje)
+                # Limpiar campo y actualizar stats
+                self.codigo_var.set("")
+                self.actualizar_estadisticas()
+            else:
+                messagebox.showerror("Error", mensaje)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error procesando cancelado: {str(e)}")
     
     def actualizar_estadisticas(self):
         """Actualiza las estadísticas mostradas en pantalla (solo datos confiables)"""
-        total_tickets = len(self.ticket_manager.tickets)
-        total_monto = sum(t.monto for t in self.ticket_manager.tickets.values())
+        tickets_validos = [t for t in self.ticket_manager.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
+        total_tickets = len(tickets_validos)
+        total_monto = sum(t.monto for t in tickets_validos)
         
         stats_text = f"""Tickets procesados: {total_tickets}
 Monto acumulado: ${total_monto:.2f}"""
@@ -331,6 +383,21 @@ Monto acumulado: ${total_monto:.2f}"""
                             bg="#ffcccc", fg="#c0392b", width=12).pack(side="left", padx=5)
                     tk.Label(fila_frame, text=ticket['horario_camaras'], font=("Arial", 10, "bold"), 
                             bg="#ffcccc", fg="#c0392b", width=20).pack(side="left", padx=5)
+                elif ticket['status'] == 'CANCELADO':
+                    # Ticket cancelado en GRIS
+                    fila_frame = tk.Frame(scrollable_frame, bg="#eeeeee", bd=1, relief="solid")
+                    fila_frame.pack(fill="x", padx=5, pady=2)
+                    
+                    tk.Label(fila_frame, text=ticket['folio'], font=("Arial", 10), 
+                            bg="#eeeeee", fg="#7f8c8d", width=10).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text="✖ CANCELADO", font=("Arial", 10, "bold"), 
+                            bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text=ticket['hora'], font=("Arial", 10), 
+                            bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text=ticket['monto'], font=("Arial", 10), 
+                            bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text="(no suma)", font=("Arial", 10, "italic"), 
+                            bg="#eeeeee", fg="#7f8c8d", width=20).pack(side="left", padx=5)
                 else:
                     # Ticket OK en blanco
                     fila_frame = tk.Frame(scrollable_frame, bg="white", bd=1, relief="flat")
@@ -382,6 +449,13 @@ Monto acumulado: ${total_monto:.2f}"""
             width=10
         )
         btn_cerrar.pack(pady=(0, 20))
+
+    def toggle_topmost(self):
+        """Activa/Desactiva que la ventana principal quede siempre visible"""
+        try:
+            self.root.attributes("-topmost", bool(self.topmost_var.get()))
+        except Exception:
+            pass
     
     def cierre_de_caja(self):
         """Realiza el cierre de caja con confirmación"""
