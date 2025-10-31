@@ -34,6 +34,23 @@ class TicketManager:
         self.ultimo_folio_esperado = None
         self.data_file = "tickets_data.json"
         self.cargar_datos()
+
+    # Utilidades para manejar folios por número (evita depender del zfill)
+    def _folio_key_variants(self, folio_num: int) -> List[str]:
+        s = str(folio_num)
+        return [s, s.zfill(3), s.zfill(4)]
+
+    def _has_ticket_by_int(self, folio_num: int) -> bool:
+        for k in self._folio_key_variants(folio_num):
+            if k in self.tickets:
+                return True
+        return False
+
+    def _get_ticket_by_int(self, folio_num: int) -> Optional['Ticket']:
+        for k in self._folio_key_variants(folio_num):
+            if k in self.tickets:
+                return self.tickets[k]
+        return None
     
     def parsear_codigo_barras(self, codigo: str) -> Optional[Ticket]:
         """
@@ -49,8 +66,8 @@ class TicketManager:
             # Normalizar: dejar sólo dígitos y el punto decimal
             codigo_norm = re.sub(r'[^0-9\.]', '', codigo)
 
-            # Intento A: HHMMSS FFF MMMM . CC (con punto)
-            m = re.match(r'^(\d{6})(\d{3})(\d{4})\.(\d{2})$', codigo_norm)
+            # Intento A: HHMMSS FFF/MMMM . CC (con punto) — folio 3 o 4 dígitos
+            m = re.match(r'^(\d{6})(\d{3,4})(\d{4})\.(\d{2})$', codigo_norm)
             if m:
                 hora_str, folio_str, mmmm, cc = m.groups()
                 hoy = datetime.now()
@@ -60,12 +77,13 @@ class TicketManager:
                     second=int(hora_str[4:6]),
                     microsecond=0
                 )
-                folio_encontrado = folio_str
+                # normalizar folio removiendo ceros a la izquierda
+                folio_encontrado = str(int(folio_str))
                 monto_encontrado = float(f"{int(mmmm):04d}.{int(cc):02d}")
                 return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
 
-            # Intento B: HHMMSS FFF MMMM CC (sin punto)
-            m = re.match(r'^(\d{6})(\d{3})(\d{4})(\d{2})$', codigo_norm)
+            # Intento B: HHMMSS FFF MMMM CC (sin punto) — folio 3 o 4 dígitos
+            m = re.match(r'^(\d{6})(\d{3,4})(\d{4})(\d{2})$', codigo_norm)
             if m:
                 hora_str, folio_str, mmmm, cc = m.groups()
                 hoy = datetime.now()
@@ -75,7 +93,7 @@ class TicketManager:
                     second=int(hora_str[4:6]),
                     microsecond=0
                 )
-                folio_encontrado = folio_str
+                folio_encontrado = str(int(folio_str))
                 monto_encontrado = float(f"{int(mmmm):04d}.{int(cc):02d}")
                 return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
 
@@ -97,8 +115,8 @@ class TicketManager:
                 r'(\d{12})',                                # 202510131430 (sin segundos)
             ]
             
-            # Patrón para folio (3 dígitos)
-            patron_folio = r'(\b\d{3}\b)'
+            # Patrón para folio (3 o 4 dígitos)
+            patron_folio = r'(\b\d{3,4}\b)'
             
             # Patrón para monto (formato decimal con 2 decimales)
             patron_monto = r'(\d+\.\d{2})'
@@ -127,14 +145,14 @@ class TicketManager:
             
             # Buscar folio (buscar específicamente después de guion bajo o al final)
             # Buscar patrón _XXX_ o _XXX al final
-            match_folio = re.search(r'_(\d{3})(?:_|$)', codigo)
+            match_folio = re.search(r'_(\d{3,4})(?:_|$)', codigo)
             if match_folio:
-                folio_encontrado = match_folio.group(1)
+                folio_encontrado = str(int(match_folio.group(1)))
             else:
                 # Buscar cualquier secuencia de 3 dígitos como respaldo
                 folios = re.findall(patron_folio, codigo)
                 if folios:
-                    folio_encontrado = folios[0]
+                    folio_encontrado = str(int(folios[0]))
             
             # Buscar monto
             montos = re.findall(patron_monto, codigo)
@@ -147,7 +165,7 @@ class TicketManager:
             
             if not folio_encontrado:
                 # Generar folio basado en timestamp si no se encuentra
-                folio_encontrado = str(int(datetime.now().timestamp()) % 1000).zfill(3)
+                folio_encontrado = str(int(datetime.now().timestamp()) % 10000)
             
             if monto_encontrado is None:
                 # Evitar interpretar cadenas numéricas largas como monto
@@ -176,7 +194,10 @@ class TicketManager:
             return False, "Código de barras inválido", False
         
         # Verificar si ya existe
-        if ticket.folio in self.tickets:
+        folio_nuevo = int(ticket.folio)
+        # Normalizar clave a cadena sin ceros a la izquierda
+        ticket.folio = str(folio_nuevo)
+        if self._has_ticket_by_int(folio_nuevo):
             return False, f"Ticket {ticket.folio} ya existe", False
         
         # Validar que el ticket esté en un rango razonable
@@ -243,16 +264,18 @@ class TicketManager:
         elif folio_actual > self.ultimo_folio_esperado + 1:
             # Hay tickets faltantes
             for folio_faltante in range(self.ultimo_folio_esperado + 1, folio_actual):
-                self.tickets_faltantes_detectados.add(str(folio_faltante).zfill(3))
+                # Guardar sin ceros a la izquierda
+                self.tickets_faltantes_detectados.add(str(folio_faltante))
             
             self.ultimo_folio_esperado = folio_actual
             self.contador_advertencia = 3  # Mostrar amarillo por los próximos 3 tickets
             return True
         else:
             # Ticket anterior que llegó tarde
-            folio_str = str(folio_actual).zfill(3)
-            if folio_str in self.tickets_faltantes_detectados:
-                self.tickets_faltantes_detectados.remove(folio_str)
+            # Quitar de faltantes cualquier variante
+            for variante in [str(folio_actual), str(folio_actual).zfill(3), str(folio_actual).zfill(4)]:
+                if variante in self.tickets_faltantes_detectados:
+                    self.tickets_faltantes_detectados.remove(variante)
             
             # Si aún hay advertencias pendientes, continuar mostrando amarillo
             if self.contador_advertencia > 0:
@@ -276,17 +299,16 @@ class TicketManager:
             
         folio_min = min(folios_existentes)
         folio_max = max(folios_existentes)
+        width = max(3, len(str(folio_max)))
         
         resultado = []
         
         for folio_num in range(folio_min, folio_max + 1):
-            folio_str = str(folio_num).zfill(3)
-            
-            if folio_str in self.tickets:
-                # Ticket existente
-                ticket = self.tickets[folio_str]
+            folio_display = str(folio_num).zfill(width)
+            ticket = self._get_ticket_by_int(folio_num)
+            if ticket:
                 resultado.append({
-                    'folio': folio_str,
+                    'folio': folio_display,
                     'status': 'CANCELADO' if getattr(ticket, 'estado', 'OK') == 'CANCELADO' else 'OK',
                     'hora': ticket.fecha_hora.strftime('%H:%M:%S'),
                     'monto': f"${ticket.monto:.2f}",
@@ -315,7 +337,7 @@ class TicketManager:
                     horario_camaras = "Sin referencia"
                 
                 resultado.append({
-                    'folio': folio_str,
+                    'folio': folio_display,
                     'status': 'FALTANTE',
                     'hora': '---',
                     'monto': '---',
@@ -358,12 +380,11 @@ class TicketManager:
         """Busca el ticket más cercano en la dirección especificada"""
         for i in range(1, 100):  # Buscar hasta 100 folios de distancia
             folio_buscar = folio_objetivo + (i * direccion)
-            if folio_buscar < 1 or folio_buscar > 999:
+            if folio_buscar < 1 or folio_buscar > 9999:
                 break
-            
-            folio_str = str(folio_buscar).zfill(3)
-            if folio_str in self.tickets:
-                return self.tickets[folio_str]
+            t = self._get_ticket_by_int(folio_buscar)
+            if t:
+                return t
         
         return None
     
