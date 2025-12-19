@@ -72,6 +72,9 @@ class AplicacionTickets:
         self.codigo_var = tk.StringVar()
         self.codigo_var.trace('w', self.on_codigo_change)
         
+        # Modo cancelado
+        self.modo_cancelado = False
+        
         # Configurar interfaz
         self.crear_interfaz()
         
@@ -180,6 +183,21 @@ class AplicacionTickets:
             bd=3
         )
         btn_cancelado.pack(side="left", padx=10)
+        
+        # Botón para imprimir resumen
+        btn_imprimir = tk.Button(
+            frame_botones,
+            text="🖨️ Imprimir Resumen",
+            command=self.imprimir_resumen,
+            font=("Arial", 12, "bold"),
+            bg="#27ae60",
+            fg="white",
+            width=18,
+            height=2,
+            relief="raised",
+            bd=3
+        )
+        btn_imprimir.pack(side="left", padx=10)
 
         # Checkbox: Siempre visible (investigación: usa atributo topmost)
         self.topmost_var = tk.BooleanVar(value=False)
@@ -251,7 +269,10 @@ class AplicacionTickets:
         # Procesar solo cuando el código parece completo para evitar lecturas parciales
         if not hasattr(self, '_procesando') and self._codigo_parece_completo(codigo):
             self._procesando = True
-            self.root.after(50, self.procesar_codigo_automatico)
+            if self.modo_cancelado:
+                self.root.after(50, self.procesar_codigo_cancelado_auto)
+            else:
+                self.root.after(50, self.procesar_codigo_automatico)
 
     def procesar_codigo_manual(self, event=None):
         """Procesa cuando el escáner envía Enter al finalizar el código"""
@@ -259,11 +280,40 @@ class AplicacionTickets:
         if not codigo:
             return
 
-        self.procesar_ticket(codigo)
+        if self.modo_cancelado:
+            self.procesar_ticket_cancelado_codigo(codigo)
+        else:
+            self.procesar_ticket(codigo)
         self.codigo_var.set("")
         self.entrada_codigo.focus_set()
         if hasattr(self, '_procesando'):
             delattr(self, '_procesando')
+    
+    def procesar_codigo_cancelado_auto(self):
+        """Procesa automáticamente en modo cancelado después de un delay"""
+        try:
+            codigo = self.codigo_var.get().strip()
+            if codigo:
+                self.procesar_ticket_cancelado_codigo(codigo)
+                self.codigo_var.set("")
+        finally:
+            if hasattr(self, '_procesando'):
+                delattr(self, '_procesando')
+            self.entrada_codigo.focus_set()
+    
+    def procesar_ticket_cancelado_codigo(self, codigo):
+        """Procesa un código como cancelado"""
+        try:
+            exito, mensaje, _ = self.ticket_manager.agregar_ticket_cancelado(codigo)
+            if exito:
+                PantallaConfirmacion(self.root, es_advertencia=True, mensaje=mensaje)
+                self.actualizar_estadisticas()
+                # Salir del modo cancelado después de procesar
+                self.modo_cancelado = False
+            else:
+                messagebox.showerror("Error", mensaje)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error procesando cancelado: {str(e)}")
     
     def procesar_codigo_automatico(self):
         """Procesa el código automáticamente después de un breve delay"""
@@ -304,23 +354,15 @@ class AplicacionTickets:
             messagebox.showerror("Error", f"Error procesando ticket: {str(e)}")
 
     def procesar_ticket_cancelado(self):
-        """Procesa el código actual como ticket CANCELADO"""
-        codigo = self.codigo_var.get().strip()
-        if not codigo:
-            messagebox.showwarning("Falta código", "Escanea o escribe el código a cancelar y vuelve a presionar el botón.")
-            self.entrada_codigo.focus_set()
-            return
-        try:
-            exito, mensaje, _ = self.ticket_manager.agregar_ticket_cancelado(codigo)
-            if exito:
-                PantallaConfirmacion(self.root, es_advertencia=True, mensaje=mensaje)
-                # Limpiar campo y actualizar stats
-                self.codigo_var.set("")
-                self.actualizar_estadisticas()
-            else:
-                messagebox.showerror("Error", mensaje)
-        except Exception as e:
-            messagebox.showerror("Error", f"Error procesando cancelado: {str(e)}")
+        """Cambia a modo cancelado para escanear el ticket a cancelar"""
+        # Cambiar modo a cancelado (sin bloquear con messagebox)
+        self.modo_cancelado = True
+        self.entrada_codigo.focus_set()
+        messagebox.showinfo(
+            "Modo Cancelado",
+            "Escanea o escribe el código a cancelar.\n(Se procesará automáticamente)"
+        )
+        self.entrada_codigo.focus_set()
     
     def actualizar_estadisticas(self):
         """Actualiza las estadísticas mostradas en pantalla (solo datos confiables)"""
@@ -552,6 +594,120 @@ class AplicacionTickets:
         """Maneja el cierre de la aplicación"""
         if messagebox.askokcancel("Salir", "¿Desea salir del sistema de tickets?"):
             self.root.destroy()
+    
+    def imprimir_resumen(self):
+        """Imprime el resumen en la impresora térmica POS"""
+        try:
+            resumen_texto = self._generar_resumen_impresion()
+            exito = self._enviar_a_impresora(resumen_texto)
+            if exito:
+                messagebox.showinfo("Impresión", "Resumen enviado a la impresora.")
+            else:
+                messagebox.showerror("Error", "No se pudo enviar a la impresora. Verifica que esté disponible.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error imprimiendo: {str(e)}")
+    
+    def _generar_resumen_impresion(self) -> str:
+        """Genera el texto formateado para la impresora térmica (57mm)"""
+        import datetime
+        
+        stats = self.ticket_manager.obtener_estadisticas_turno()
+        tickets_detalle = self.ticket_manager.obtener_resumen_detallado()
+        
+        # Ancho para impresora térmica 57mm (aprox 32 caracteres)
+        ancho = 32
+        
+        linea_sep = "=" * ancho
+        
+        # Encabezado
+        lineas = [
+            linea_sep,
+            "CIERRE DE CAJA - TURNO",
+            self.ticket_manager.turno_actual.upper(),
+            linea_sep,
+            f"Fecha: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            "",
+            f"Total de tickets procesados:",
+            f"{stats['total_ok']}",
+            f"Monto total: ${stats['monto_ok']:.2f}",
+            ""
+        ]
+        
+        # Cancelados si hay
+        if stats['total_cancelados'] > 0:
+            lineas.append(f"\nTICKETS CANCELADOS: {stats['total_cancelados']}")
+            lineas.append(f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}")
+            lineas.append("")
+        
+        # Tickets faltantes
+        total_faltantes = sum(1 for t in tickets_detalle if t['status'] == 'FALTANTE')
+        if total_faltantes > 0:
+            lineas.append(f"TICKETS FALTANTES: {total_faltantes}")
+            lineas.append(linea_sep)
+            
+            for ticket in tickets_detalle:
+                if ticket['status'] == 'FALTANTE':
+                    folio_str = f"Folio {ticket['folio']}"
+                    lineas.append(folio_str)
+                    lineas.append(f"Revisar camaras:")
+                    if ticket['horario_camaras']:
+                        # Partir el horario en dos líneas si es necesario
+                        horario = ticket['horario_camaras']
+                        if len(horario) > ancho:
+                            parts = horario.split(' - ')
+                            lineas.append(parts[0])
+                            if len(parts) > 1:
+                                lineas.append("a " + parts[1])
+                        else:
+                            lineas.append(horario)
+                    lineas.append("")
+        else:
+            lineas.append("TICKETS FALTANTES: 0")
+            lineas.append("Todos los tickets en orden")
+            lineas.append("")
+        
+        # Pie de página
+        lineas.append(linea_sep)
+        lineas.append(f"Próximo turno: {'tarde' if self.ticket_manager.turno_actual == 'mañana' else 'mañana'}")
+        lineas.append(linea_sep)
+        lineas.append("")  # Salto final para el papel
+        
+        return "\n".join(lineas)
+    
+    def _enviar_a_impresora(self, texto: str) -> bool:
+        """Envía el texto a la impresora térmica POS predeterminada"""
+        try:
+            import subprocess
+            import os
+            
+            # Crear archivo temporal con el contenido
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                f.write(texto)
+                temp_file = f.name
+            
+            try:
+                # Enviar a la impresora predeterminada en Windows
+                # Usar comando de impresión directa sin abrir diálogo
+                subprocess.run(
+                    ["notepad.exe", "/p", temp_file],
+                    check=True,
+                    capture_output=True,
+                    timeout=10
+                )
+                return True
+            finally:
+                # Limpiar archivo temporal
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+                    
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception as e:
+            print(f"Error en impresora: {e}")
+            return False
 
 def main():
     """Función principal"""
