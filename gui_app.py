@@ -1,3 +1,4 @@
+import re
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
@@ -119,6 +120,7 @@ class AplicacionTickets:
             justify="center"
         )
         self.entrada_codigo.pack(pady=10)
+        self.entrada_codigo.bind("<Return>", self.procesar_codigo_manual)
         
         # Instrucciones
         instrucciones = tk.Label(
@@ -215,16 +217,53 @@ class AplicacionTickets:
         
         # Area de log (oculta por defecto, se puede mostrar para debug)
         self.log_visible = False
+
+    def _codigo_parece_completo(self, codigo: str) -> bool:
+        """Valida si el escaneo ya tiene todos los fragmentos esperados"""
+        codigo_limpio = codigo.strip()
+        if not codigo_limpio:
+            return False
+
+        codigo_norm = re.sub(r'[^0-9\.]', '', codigo_limpio)
+
+        patrones_norm = [
+            r'^\d{6}\d{3,4}\d{4}\.\d{2}$',  # HHMMSS + folio + monto con punto
+            r'^\d{6}\d{3,4}\d{4}\d{2}$',     # HHMMSS + folio + monto sin punto
+        ]
+
+        if any(re.fullmatch(p, codigo_norm) for p in patrones_norm):
+            return True
+
+        # Si el escáner envía Enter/CR al final, úsalo como señal de fin
+        if (codigo_limpio.endswith('\n') or codigo_limpio.endswith('\r')) and len(codigo_norm) >= 12:
+            return True
+
+        # Permitir formatos largos con fecha completa + folio + monto
+        if len(codigo_norm) >= 18 and re.search(r'\d{14}', codigo_norm):
+            return True
+
+        return False
     
     def on_codigo_change(self, *args):
         """Se ejecuta cuando cambia el contenido del campo de código"""
-        codigo = self.codigo_var.get().strip()
-        
-        # Procesar automáticamente cuando el código tenga cierta longitud
-        # Ajusta esta condición según tus códigos de barras
-        if len(codigo) >= 10 and not hasattr(self, '_procesando'):
+        codigo = self.codigo_var.get()
+
+        # Procesar solo cuando el código parece completo para evitar lecturas parciales
+        if not hasattr(self, '_procesando') and self._codigo_parece_completo(codigo):
             self._procesando = True
-            self.root.after(100, self.procesar_codigo_automatico)
+            self.root.after(50, self.procesar_codigo_automatico)
+
+    def procesar_codigo_manual(self, event=None):
+        """Procesa cuando el escáner envía Enter al finalizar el código"""
+        codigo = self.codigo_var.get().strip()
+        if not codigo:
+            return
+
+        self.procesar_ticket(codigo)
+        self.codigo_var.set("")
+        self.entrada_codigo.focus_set()
+        if hasattr(self, '_procesando'):
+            delattr(self, '_procesando')
     
     def procesar_codigo_automatico(self):
         """Procesa el código automáticamente después de un breve delay"""
@@ -285,12 +324,17 @@ class AplicacionTickets:
     
     def actualizar_estadisticas(self):
         """Actualiza las estadísticas mostradas en pantalla (solo datos confiables)"""
-        tickets_validos = [t for t in self.ticket_manager.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
-        total_tickets = len(tickets_validos)
-        total_monto = sum(t.monto for t in tickets_validos)
-        
-        stats_text = f"""Tickets procesados: {total_tickets}
-Monto acumulado: ${total_monto:.2f}"""
+        stats = self.ticket_manager.obtener_estadisticas_turno()
+
+        stats_text = (
+            f"Tickets OK: {stats['total_ok']}\n"
+            f"Cancelados: {stats['total_cancelados']}\n"
+            f"Total escaneados: {stats['total_escaneados']}\n"
+            f"Monto acumulado: ${stats['monto_ok']:.2f}"
+        )
+
+        if stats['monto_cancelado'] > 0:
+            stats_text += f"\nMonto cancelado (no suma): ${stats['monto_cancelado']:.2f}"
         
         self.label_stats.config(text=stats_text)
         
@@ -437,6 +481,18 @@ Monto acumulado: ${total_monto:.2f}"""
                 bg="#ecf0f1",
                 fg="#27ae60"
             ).pack()
+
+        stats = self.ticket_manager.obtener_estadisticas_turno()
+        tk.Label(
+            resumen_frame,
+            text=(
+                f"Cancelados en turno: {stats['total_cancelados']}  "
+                f"(monto cancelado: ${stats['monto_cancelado']:.2f})"
+            ),
+            font=("Arial", 11),
+            bg="#ecf0f1",
+            fg="#7f8c8d"
+        ).pack(pady=(8, 0))
         
         # Botón cerrar
         btn_cerrar = tk.Button(

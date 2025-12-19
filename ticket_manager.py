@@ -66,6 +66,10 @@ class TicketManager:
             # Normalizar: dejar sólo dígitos y el punto decimal
             codigo_norm = re.sub(r'[^0-9\.]', '', codigo)
 
+            # Evitar parsear cadenas claramente incompletas
+            if len(codigo_norm) < 12:
+                return None
+
             # Intento A: HHMMSS FFF/MMMM . CC (con punto) — folio 3 o 4 dígitos
             m = re.match(r'^(\d{6})(\d{3,4})(\d{4})\.(\d{2})$', codigo_norm)
             if m:
@@ -345,13 +349,39 @@ class TicketManager:
                 })
         
         return resultado
+
+    def obtener_estadisticas_turno(self) -> Dict[str, float]:
+        """Devuelve conteos y montos separados por estado para el turno en curso"""
+        tickets_cancelados = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') == 'CANCELADO']
+        tickets_validos = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
+
+        monto_cancelado = sum(t.monto for t in tickets_cancelados)
+        monto_ok = sum(t.monto for t in tickets_validos)
+
+        return {
+            'total_ok': len(tickets_validos),
+            'total_cancelados': len(tickets_cancelados),
+            'total_escaneados': len(self.tickets),
+            'monto_ok': monto_ok,
+            'monto_cancelado': monto_cancelado
+        }
     
     def obtener_resumen(self) -> str:
         """Genera un resumen de tickets faltantes y sugerencias de horarios (versión simple)"""
+        stats = self.obtener_estadisticas_turno()
+
         if not self.tickets_faltantes_detectados:
-            return "OK - Ningun ticket faltante"
-        
-        resumen = f"TICKETS FALTANTES: {len(self.tickets_faltantes_detectados)}\n\n"
+            return (
+                "OK - Ningun ticket faltante\n"
+                f"Cancelados registrados: {stats['total_cancelados']}\n"
+                f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}"
+            )
+
+        resumen = (
+            f"TICKETS FALTANTES: {len(self.tickets_faltantes_detectados)}\n\n"
+            f"Cancelados registrados: {stats['total_cancelados']}\n"
+            f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}\n\n"
+        )
         
         for folio in sorted(self.tickets_faltantes_detectados):
             # Buscar tickets antes y después para estimar horario
@@ -396,17 +426,17 @@ class TicketManager:
         nuevo_turno = "tarde" if self.turno_actual == "mañana" else "mañana"
         
         # Generar reporte de cierre
-        # Excluir cancelados del total y del monto
-        tickets_validos = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
-        total_tickets = len(tickets_validos)
-        total_monto = sum(t.monto for t in tickets_validos)
+        stats = self.obtener_estadisticas_turno()
         
         reporte = f"""
 === CIERRE DE CAJA - TURNO {self.turno_actual.upper()} ===
 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
-Total de tickets procesados: {total_tickets}
-Monto total: ${total_monto:.2f}
+    Tickets OK: {stats['total_ok']}
+    Cancelados: {stats['total_cancelados']}
+    Total escaneados: {stats['total_escaneados']}
+    Monto total (OK): ${stats['monto_ok']:.2f}
+    Monto cancelado (referencia, no suma): ${stats['monto_cancelado']:.2f}
 
 {resumen}
 
