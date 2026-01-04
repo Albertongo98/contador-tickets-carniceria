@@ -38,7 +38,7 @@ class TicketManager:
     # Utilidades para manejar folios por número (evita depender del zfill)
     def _folio_key_variants(self, folio_num: int) -> List[str]:
         s = str(folio_num)
-        return [s, s.zfill(3), s.zfill(4)]
+        return [s, s.zfill(3), s.zfill(4), s.zfill(5)]
 
     def _has_ticket_by_int(self, folio_num: int) -> bool:
         for k in self._folio_key_variants(folio_num):
@@ -70,8 +70,8 @@ class TicketManager:
             if len(codigo_norm) < 12:
                 return None
 
-            # Intento A: HHMMSS FFF/MMMM . CC (con punto) — folio 3 o 4 dígitos
-            m = re.match(r'^(\d{6})(\d{3,4})(\d{4})\.(\d{2})$', codigo_norm)
+            # Intento A: HHMMSS FFF/FFFF/FFFFF . CC (con punto) — folio 3, 4 o 5 dígitos
+            m = re.match(r'^(\d{6})(\d{3,5})(\d{4})\.(\d{2})$', codigo_norm)
             if m:
                 hora_str, folio_str, mmmm, cc = m.groups()
                 hoy = datetime.now()
@@ -86,8 +86,8 @@ class TicketManager:
                 monto_encontrado = float(f"{int(mmmm):04d}.{int(cc):02d}")
                 return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
 
-            # Intento B: HHMMSS FFF MMMM CC (sin punto) — folio 3 o 4 dígitos
-            m = re.match(r'^(\d{6})(\d{3,4})(\d{4})(\d{2})$', codigo_norm)
+            # Intento B: HHMMSS FFF/FFFF/FFFFF MMMM CC (sin punto) — folio 3, 4 o 5 dígitos
+            m = re.match(r'^(\d{6})(\d{3,5})(\d{4})(\d{2})$', codigo_norm)
             if m:
                 hora_str, folio_str, mmmm, cc = m.groups()
                 hoy = datetime.now()
@@ -119,8 +119,8 @@ class TicketManager:
                 r'(\d{12})',                                # 202510131430 (sin segundos)
             ]
             
-            # Patrón para folio (3 o 4 dígitos)
-            patron_folio = r'(\b\d{3,4}\b)'
+            # Patrón para folio (3, 4 o 5 dígitos)
+            patron_folio = r'(\b\d{3,5}\b)'
             
             # Patrón para monto (formato decimal con 2 decimales)
             patron_monto = r'(\d+\.\d{2})'
@@ -148,8 +148,8 @@ class TicketManager:
                         continue
             
             # Buscar folio (buscar específicamente después de guion bajo o al final)
-            # Buscar patrón _XXX_ o _XXX al final
-            match_folio = re.search(r'_(\d{3,4})(?:_|$)', codigo)
+            # Buscar patrón _XXX_ o _XXXX_ o _XXXXX_ al final
+            match_folio = re.search(r'_(\d{3,5})(?:_|$)', codigo)
             if match_folio:
                 folio_encontrado = str(int(match_folio.group(1)))
             else:
@@ -410,7 +410,7 @@ class TicketManager:
         """Busca el ticket más cercano en la dirección especificada"""
         for i in range(1, 100):  # Buscar hasta 100 folios de distancia
             folio_buscar = folio_objetivo + (i * direccion)
-            if folio_buscar < 1 or folio_buscar > 9999:
+            if folio_buscar < 1 or folio_buscar > 99999:
                 break
             t = self._get_ticket_by_int(folio_buscar)
             if t:

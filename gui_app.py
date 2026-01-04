@@ -245,8 +245,8 @@ class AplicacionTickets:
         codigo_norm = re.sub(r'[^0-9\.]', '', codigo_limpio)
 
         patrones_norm = [
-            r'^\d{6}\d{3,4}\d{4}\.\d{2}$',  # HHMMSS + folio + monto con punto
-            r'^\d{6}\d{3,4}\d{4}\d{2}$',     # HHMMSS + folio + monto sin punto
+            r'^\d{6}\d{3,5}\d{4}\.\d{2}$',  # HHMMSS + folio (3-5 dígitos) + monto con punto
+            r'^\d{6}\d{3,5}\d{4}\d{2}$',     # HHMMSS + folio (3-5 dígitos) + monto sin punto
         ]
 
         if any(re.fullmatch(p, codigo_norm) for p in patrones_norm):
