@@ -12,14 +12,15 @@ class GeneradorCodigosBarras:
     """Genera códigos de barras en el formato estándar para pruebas y validación"""
     
     def __init__(self):
-        self.formato_estandar = "YYYYMMDDHHMMSS-FFF-MMMM.CC"
+        self.formato_estandar = "HHMMSS'FFF"
         self.ultimo_folio = 0
         self.fecha_actual = datetime.now()
     
-    def generar_codigo_estandar(self, folio=None, monto=None, fecha_hora=None):
+    def generar_codigo_estandar(self, folio=None, fecha_hora=None):
         """
-        Genera un código de barras en formato estándar
-        YYYYMMDDHHMMSS-FFF-MMMM.CC
+        Genera un código de barras CODE 128 en formato estándar
+        HHMMSS'FFF (solo hora y folio, sin monto)
+        Ejemplo: 081021'004
         """
         # Usar valores por defecto si no se proporcionan
         if fecha_hora is None:
@@ -29,15 +30,11 @@ class GeneradorCodigosBarras:
             self.ultimo_folio += 1
             folio = self.ultimo_folio
         
-        if monto is None:
-            monto = round(random.uniform(25.00, 500.00), 2)
-        
         # Formatear componentes
-        fecha_str = fecha_hora.strftime("%Y%m%d%H%M%S")
+        hora_str = fecha_hora.strftime("%H%M%S")
         folio_str = str(folio).zfill(3)  # 001, 002, etc.
-        monto_str = f"{float(monto):07.2f}"  # 0125.50, 0089.75, etc.
         
-        return f"{fecha_str}-{folio_str}-{monto_str}"
+        return f"{hora_str}'{folio_str}"
     
     def generar_secuencia_prueba(self, cantidad=10, saltar_folio=None):
         """
@@ -54,50 +51,50 @@ class GeneradorCodigosBarras:
                 
             # Incrementar tiempo por cada ticket (1-3 minutos entre tickets)
             tiempo_ticket = base_time + timedelta(minutes=i * random.randint(1, 3))
-            monto = round(random.uniform(45.25, 350.75), 2)
             
-            codigo = self.generar_codigo_estandar(i, monto, tiempo_ticket)
+            codigo = self.generar_codigo_estandar(i, tiempo_ticket)
             codigos.append({
                 'folio': i,
                 'codigo': codigo,
-                'monto': monto,
                 'tiempo': tiempo_ticket.strftime('%H:%M:%S')
             })
         
         return codigos
     
     def validar_formato(self, codigo):
-        """Valida que un código cumpla con el formato estándar"""
+        """Valida que un código cumpla con el formato estándar CODE 128"""
         import re
         
-        patron = r'^(\d{14})-(\d{3})-(\d{4}\.\d{2})$'
+        patron = r"^(\d{6})'(\d{3})$"
         match = re.match(patron, codigo)
         
         if not match:
-            return False, "Formato incorrecto. Debe ser: YYYYMMDDHHMMSS-FFF-MMMM.CC"
+            return False, f"Formato incorrecto. Debe ser: HHMMSS'FFF (ejemplo: 081021'004)"
         
-        fecha_str, folio_str, monto_str = match.groups()
+        hora_str, folio_str = match.groups()
         
-        # Validar fecha
+        # Validar hora
         try:
-            fecha = datetime.strptime(fecha_str, '%Y%m%d%H%M%S')
+            hora_int = int(hora_str[:2])
+            minuto_int = int(hora_str[2:4])
+            segundo_int = int(hora_str[4:6])
+            
+            if not (0 <= hora_int < 24):
+                return False, "Hora debe estar entre 00 y 23"
+            if not (0 <= minuto_int < 60):
+                return False, "Minuto debe estar entre 00 y 59"
+            if not (0 <= segundo_int < 60):
+                return False, "Segundo debe estar entre 00 y 59"
+                
         except ValueError:
-            return False, "Fecha/hora inválida en el código"
+            return False, "Hora/minuto/segundo inválidos"
         
         # Validar folio (001-999)
         folio_num = int(folio_str)
         if folio_num < 1 or folio_num > 999:
             return False, "Folio debe estar entre 001 y 999"
         
-        # Validar monto (0000.01 - 9999.99)
-        try:
-            monto = float(monto_str)
-            if monto <= 0 or monto > 9999.99:
-                return False, "Monto debe estar entre 0000.01 y 9999.99"
-        except ValueError:
-            return False, "Formato de monto inválido"
-        
-        return True, f"Válido - Folio: {folio_num}, Monto: ${monto:.2f}, Fecha: {fecha.strftime('%d/%m/%Y %H:%M:%S')}"
+        return True, f"Válido - Folio: {folio_num}, Hora: {hora_str[:2]}:{hora_str[2:4]}:{hora_str[4:6]}"
 
 def main():
     """Función principal para pruebas"""

@@ -6,18 +6,17 @@ from typing import Dict, List, Optional, Tuple
 import os
 
 class Ticket:
-    """Representa un ticket individual con folio, fecha/hora, monto y estado"""
+    """Representa un ticket individual con folio, fecha/hora y estado"""
     
-    def __init__(self, folio: str, fecha_hora: datetime, monto: float, codigo_original: str, estado: str = "OK"):
+    def __init__(self, folio: str, fecha_hora: datetime, codigo_original: str, estado: str = "OK"):
         self.folio = folio
         self.fecha_hora = fecha_hora
-        self.monto = monto
         self.codigo_original = codigo_original
-        # estado: "OK" | "CANCELADO"
+        # estado: "OK" | "CANCELADO" | "FALTANTE"
         self.estado = estado
     
     def __str__(self):
-        return f"Ticket {self.folio}: {self.fecha_hora.strftime('%H:%M:%S')} - ${self.monto:.2f}"
+        return f"Ticket {self.folio}: {self.fecha_hora.strftime('%H:%M:%S')}"
     
     def __repr__(self):
         return self.__str__()
@@ -54,26 +53,24 @@ class TicketManager:
     
     def parsear_codigo_barras(self, codigo: str) -> Optional[Ticket]:
         """
-        Parsea un código de barras y extrae hora, folio y monto.
-        Formato compacto recomendado: HHMMSS-FFF-MMMM.CC
-        También soporta formatos alternativos para compatibilidad.
+        Parsea un código de barras CODE 128 y extrae hora y folio.
+        Formato: HHMMSS'FFFF o HHMMSS-FFFF (ej: 081021'004)
         """
         try:
             # NORMALIZAR: quitar espacios en blanco alrededor
             codigo = codigo.strip()
 
-            # FORMATO COMPACTO ROBUSTO (acepta cualquier separador no numérico y con/sin punto)
-            # Normalizar: dejar sólo dígitos y el punto decimal
-            codigo_norm = re.sub(r'[^0-9\.]', '', codigo)
+            # Normalizar: dejar sólo dígitos y separadores válidos (apostrofo, guion)
+            codigo_limpio = re.sub(r'[^0-9\'\-]', '', codigo)
 
             # Evitar parsear cadenas claramente incompletas
-            if len(codigo_norm) < 12:
+            if len(codigo_limpio) < 9:  # HHMMSS + separador + al menos 1 dígito de folio
                 return None
 
-            # Intento A: HHMMSS FFF/FFFF/FFFFF . CC (con punto) — folio 3, 4 o 5 dígitos
-            m = re.match(r'^(\d{6})(\d{3,5})(\d{4})\.(\d{2})$', codigo_norm)
+            # Patrón: HHMMSS'FFFF o HHMMSS-FFFF (folio 1-5 dígitos)
+            m = re.match(r'^(\d{6})[\'\-](\d{1,5})$', codigo_limpio)
             if m:
-                hora_str, folio_str, mmmm, cc = m.groups()
+                hora_str, folio_str = m.groups()
                 hoy = datetime.now()
                 fecha_encontrada = hoy.replace(
                     hour=int(hora_str[:2]),
@@ -83,113 +80,16 @@ class TicketManager:
                 )
                 # normalizar folio removiendo ceros a la izquierda
                 folio_encontrado = str(int(folio_str))
-                monto_encontrado = float(f"{int(mmmm):04d}.{int(cc):02d}")
-                return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
+                return Ticket(folio_encontrado, fecha_encontrada, codigo)
 
-            # Intento B: HHMMSS FFF/FFFF/FFFFF MMMM CC (sin punto) — folio 3, 4 o 5 dígitos
-            m = re.match(r'^(\d{6})(\d{3,5})(\d{4})(\d{2})$', codigo_norm)
-            if m:
-                hora_str, folio_str, mmmm, cc = m.groups()
-                hoy = datetime.now()
-                fecha_encontrada = hoy.replace(
-                    hour=int(hora_str[:2]),
-                    minute=int(hora_str[2:4]),
-                    second=int(hora_str[4:6]),
-                    microsecond=0
-                )
-                folio_encontrado = str(int(folio_str))
-                monto_encontrado = float(f"{int(mmmm):04d}.{int(cc):02d}")
-                return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
-
-            # PATRÓN ALTERNATIVO: YYYYMMDDHHMMSS-FFF-MMMM.CC
-            patron_estandar = r'(\d{14})-(\d{3})-(\d{4}\.\d{2})'
-            match_estandar = re.search(patron_estandar, codigo)
-            if match_estandar:
-                fecha_str, folio_str, monto_str = match_estandar.groups()
-                fecha_encontrada = datetime.strptime(fecha_str, '%Y%m%d%H%M%S')
-                folio_encontrado = folio_str
-                monto_encontrado = float(monto_str)
-                return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
-
-            # PATRONES ALTERNATIVOS para compatibilidad con formatos existentes
-            patrones_fecha = [
-                r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})',  # 2025-10-13T14:30:25
-                r'(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})',   # 13/10/2025 14:30:25
-                r'(\d{14})',                                # 20251013143025 (sin separadores)
-                r'(\d{12})',                                # 202510131430 (sin segundos)
-            ]
-            
-            # Patrón para folio (3, 4 o 5 dígitos)
-            patron_folio = r'(\b\d{3,5}\b)'
-            
-            # Patrón para monto (formato decimal con 2 decimales)
-            patron_monto = r'(\d+\.\d{2})'
-            
-            fecha_encontrada = None
-            folio_encontrado = None
-            monto_encontrado = None
-            
-            # Buscar fecha/hora
-            for patron in patrones_fecha:
-                match = re.search(patron, codigo)
-                if match:
-                    fecha_str = match.group(1)
-                    try:
-                        if 'T' in fecha_str:
-                            fecha_encontrada = datetime.strptime(fecha_str, '%Y-%m-%dT%H:%M:%S')
-                        elif '/' in fecha_str:
-                            fecha_encontrada = datetime.strptime(fecha_str, '%d/%m/%Y %H:%M:%S')
-                        elif len(fecha_str) == 14:  # YYYYMMDDHHMMSS
-                            fecha_encontrada = datetime.strptime(fecha_str, '%Y%m%d%H%M%S')
-                        elif len(fecha_str) == 12:  # YYYYMMDDHHMM (sin segundos)
-                            fecha_encontrada = datetime.strptime(fecha_str, '%Y%m%d%H%M')
-                        break
-                    except ValueError:
-                        continue
-            
-            # Buscar folio (buscar específicamente después de guion bajo o al final)
-            # Buscar patrón _XXX_ o _XXXX_ o _XXXXX_ al final
-            match_folio = re.search(r'_(\d{3,5})(?:_|$)', codigo)
-            if match_folio:
-                folio_encontrado = str(int(match_folio.group(1)))
-            else:
-                # Buscar cualquier secuencia de 3 dígitos como respaldo
-                folios = re.findall(patron_folio, codigo)
-                if folios:
-                    folio_encontrado = str(int(folios[0]))
-            
-            # Buscar monto
-            montos = re.findall(patron_monto, codigo)
-            if montos:
-                monto_encontrado = float(montos[0])
-            
-            # Si no se encuentran todos los componentes, usar valores por defecto
-            if not fecha_encontrada:
-                fecha_encontrada = datetime.now()
-            
-            if not folio_encontrado:
-                # Generar folio basado en timestamp si no se encuentra
-                folio_encontrado = str(int(datetime.now().timestamp()) % 10000)
-            
-            if monto_encontrado is None:
-                # Evitar interpretar cadenas numéricas largas como monto
-                numeros = re.findall(r'\d+', codigo)
-                numeros = [n for n in numeros if 1 <= len(n) <= 6]  # evitar 15+ dígitos
-                if numeros:
-                    try:
-                        monto_encontrado = float(numeros[-1])
-                    except ValueError:
-                        monto_encontrado = 0.0
-                else:
-                    monto_encontrado = 0.0
-            
-            return Ticket(folio_encontrado, fecha_encontrada, monto_encontrado, codigo)
+            # Si el patrón no coincide, retorna None
+            return None
             
         except Exception as e:
             print(f"Error parseando código: {e}")
             return None
     
-    def agregar_ticket(self, codigo: str, cancelado: bool = False) -> Tuple[bool, str, bool]:
+    def agregar_ticket(self, codigo: str, cancelado: bool = False, faltante: bool = False) -> Tuple[bool, str, bool]:
         """
         Agrega un ticket y retorna (éxito, mensaje, mostrar_amarillo)
         """
@@ -225,6 +125,10 @@ class TicketManager:
         # Si es cancelado, marcar estado
         if cancelado:
             ticket.estado = "CANCELADO"
+        
+        # Si es faltante, marcar estado
+        if faltante:
+            ticket.estado = "FALTANTE"
 
         # Agregar ticket
         self.tickets[ticket.folio] = ticket
@@ -235,18 +139,26 @@ class TicketManager:
         
         self.tickets_por_fecha[fecha_str].append(ticket)
         
-        # Verificar si hay tickets faltantes
-        mostrar_amarillo = self._verificar_tickets_faltantes(ticket)
+        # Verificar si hay tickets faltantes (solo si no es cancelado ni faltante)
+        mostrar_amarillo = False
+        if not cancelado and not faltante:
+            mostrar_amarillo = self._verificar_tickets_faltantes(ticket)
         
         self.guardar_datos()
         if cancelado:
             return True, f"Ticket {ticket.folio} CANCELADO registrado", False
+        elif faltante:
+            return True, f"Ticket {ticket.folio} FALTANTE registrado", False
         else:
             return True, f"Ticket {ticket.folio} registrado correctamente", mostrar_amarillo
 
     def agregar_ticket_cancelado(self, codigo: str) -> Tuple[bool, str, bool]:
         """Atajo para agregar ticket marcado como CANCELADO"""
         return self.agregar_ticket(codigo, cancelado=True)
+    
+    def agregar_ticket_faltante(self, codigo: str) -> Tuple[bool, str, bool]:
+        """Atajo para agregar ticket marcado como FALTANTE"""
+        return self.agregar_ticket(codigo, faltante=True)
     
     def _verificar_tickets_faltantes(self, nuevo_ticket: Ticket) -> bool:
         """
@@ -291,7 +203,7 @@ class TicketManager:
     def obtener_resumen_detallado(self) -> List[Dict]:
         """
         Genera lista completa de tickets con información de faltantes
-        Retorna lista de diccionarios con: folio, status, hora, monto, horario_camaras
+        Retorna lista de diccionarios con: folio, status, hora, horario_camaras
         """
         if not self.tickets:
             return []
@@ -313,9 +225,8 @@ class TicketManager:
             if ticket:
                 resultado.append({
                     'folio': folio_display,
-                    'status': 'CANCELADO' if getattr(ticket, 'estado', 'OK') == 'CANCELADO' else 'OK',
+                    'status': getattr(ticket, 'estado', 'OK'),
                     'hora': ticket.fecha_hora.strftime('%H:%M:%S'),
-                    'monto': f"${ticket.monto:.2f}",
                     'horario_camaras': None
                 })
             else:
@@ -344,26 +255,20 @@ class TicketManager:
                     'folio': folio_display,
                     'status': 'FALTANTE',
                     'hora': '---',
-                    'monto': '---',
                     'horario_camaras': horario_camaras
                 })
         
         return resultado
 
-    def obtener_estadisticas_turno(self) -> Dict[str, float]:
-        """Devuelve conteos y montos separados por estado para el turno en curso"""
+    def obtener_estadisticas_turno(self) -> Dict[str, int]:
+        """Devuelve conteos de tickets por estado para el turno en curso"""
         tickets_cancelados = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') == 'CANCELADO']
         tickets_validos = [t for t in self.tickets.values() if getattr(t, 'estado', 'OK') != 'CANCELADO']
-
-        monto_cancelado = sum(t.monto for t in tickets_cancelados)
-        monto_ok = sum(t.monto for t in tickets_validos)
 
         return {
             'total_ok': len(tickets_validos),
             'total_cancelados': len(tickets_cancelados),
-            'total_escaneados': len(self.tickets),
-            'monto_ok': monto_ok,
-            'monto_cancelado': monto_cancelado
+            'total_escaneados': len(self.tickets)
         }
     
     def obtener_resumen(self) -> str:
@@ -373,14 +278,12 @@ class TicketManager:
         if not self.tickets_faltantes_detectados:
             return (
                 "OK - Ningun ticket faltante\n"
-                f"Cancelados registrados: {stats['total_cancelados']}\n"
-                f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}"
+                f"Cancelados registrados: {stats['total_cancelados']}"
             )
 
         resumen = (
             f"TICKETS FALTANTES: {len(self.tickets_faltantes_detectados)}\n\n"
-            f"Cancelados registrados: {stats['total_cancelados']}\n"
-            f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}\n\n"
+            f"Cancelados registrados: {stats['total_cancelados']}\n\n"
         )
         
         for folio in sorted(self.tickets_faltantes_detectados):
@@ -435,8 +338,6 @@ Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}
     Tickets OK: {stats['total_ok']}
     Cancelados: {stats['total_cancelados']}
     Total escaneados: {stats['total_escaneados']}
-    Monto total (OK): ${stats['monto_ok']:.2f}
-    Monto cancelado (referencia, no suma): ${stats['monto_cancelado']:.2f}
 
 {resumen}
 
@@ -479,7 +380,6 @@ Próximo turno: {nuevo_turno}
                 datos['tickets'][folio] = {
                     'folio': ticket.folio,
                     'fecha_hora': ticket.fecha_hora.isoformat(),
-                    'monto': ticket.monto,
                     'codigo_original': ticket.codigo_original,
                     'estado': getattr(ticket, 'estado', 'OK')
                 }
@@ -509,7 +409,6 @@ Próximo turno: {nuevo_turno}
                     ticket = Ticket(
                         ticket_data['folio'],
                         fecha_hora,
-                        ticket_data['monto'],
                         ticket_data['codigo_original'],
                         ticket_data.get('estado', 'OK')
                     )

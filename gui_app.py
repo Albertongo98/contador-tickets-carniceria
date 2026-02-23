@@ -65,6 +65,15 @@ class AplicacionTickets:
         self.root.geometry("800x600")
         self.root.configure(bg="#f0f0f0")
         
+        # Intentar cargar el logo como ícono
+        try:
+            import os
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo_color.png')
+            if os.path.exists(logo_path):
+                self.root.iconphoto(False, tk.PhotoImage(file=logo_path))
+        except Exception:
+            pass  # Si no se puede cargar el logo, continuar sin él
+        
         # Inicializar el manejador de tickets
         self.ticket_manager = TicketManager()
         
@@ -74,6 +83,9 @@ class AplicacionTickets:
         
         # Modo cancelado
         self.modo_cancelado = False
+        
+        # Modo faltante
+        self.modo_faltante = False
         
         # Configurar interfaz
         self.crear_interfaz()
@@ -184,20 +196,20 @@ class AplicacionTickets:
         )
         btn_cancelado.pack(side="left", padx=10)
         
-        # Botón para imprimir resumen
-        btn_imprimir = tk.Button(
+        # Botón para agregar ticket FALTANTE
+        btn_faltante = tk.Button(
             frame_botones,
-            text="🖨️ Imprimir Resumen",
-            command=self.imprimir_resumen,
+            text="⚠️ Agregar Faltante",
+            command=self.procesar_ticket_faltante,
             font=("Arial", 12, "bold"),
-            bg="#27ae60",
+            bg="#e67e22",
             fg="white",
             width=18,
             height=2,
             relief="raised",
             bd=3
         )
-        btn_imprimir.pack(side="left", padx=10)
+        btn_faltante.pack(side="left", padx=10)
 
         # Checkbox: Siempre visible (investigación: usa atributo topmost)
         self.topmost_var = tk.BooleanVar(value=False)
@@ -271,6 +283,8 @@ class AplicacionTickets:
             self._procesando = True
             if self.modo_cancelado:
                 self.root.after(50, self.procesar_codigo_cancelado_auto)
+            elif self.modo_faltante:
+                self.root.after(50, self.procesar_codigo_faltante_auto)
             else:
                 self.root.after(50, self.procesar_codigo_automatico)
 
@@ -282,6 +296,8 @@ class AplicacionTickets:
 
         if self.modo_cancelado:
             self.procesar_ticket_cancelado_codigo(codigo)
+        elif self.modo_faltante:
+            self.procesar_ticket_faltante_codigo(codigo)
         else:
             self.procesar_ticket(codigo)
         self.codigo_var.set("")
@@ -364,20 +380,53 @@ class AplicacionTickets:
         )
         self.entrada_codigo.focus_set()
     
+    def procesar_ticket_faltante(self):
+        """Cambia a modo faltante para escanear el ticket faltante"""
+        # Cambiar modo a faltante (sin bloquear con messagebox)
+        self.modo_faltante = True
+        self.entrada_codigo.focus_set()
+        messagebox.showinfo(
+            "Modo Faltante",
+            "Escanea o escribe el código del ticket faltante.\n(Se procesará automáticamente)"
+        )
+        self.entrada_codigo.focus_set()
+    
+    def procesar_codigo_faltante_auto(self):
+        """Procesa automáticamente en modo faltante después de un delay"""
+        try:
+            codigo = self.codigo_var.get().strip()
+            if codigo:
+                self.procesar_ticket_faltante_codigo(codigo)
+                self.codigo_var.set("")
+        finally:
+            if hasattr(self, '_procesando'):
+                delattr(self, '_procesando')
+            self.entrada_codigo.focus_set()
+    
+    def procesar_ticket_faltante_codigo(self, codigo):
+        """Procesa un código como faltante"""
+        try:
+            exito, mensaje, _ = self.ticket_manager.agregar_ticket_faltante(codigo)
+            if exito:
+                PantallaConfirmacion(self.root, es_advertencia=True, mensaje=mensaje)
+                self.actualizar_estadisticas()
+                # Salir del modo faltante después de procesar
+                self.modo_faltante = False
+            else:
+                messagebox.showerror("Error", mensaje)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error procesando faltante: {str(e)}")
+    
     def actualizar_estadisticas(self):
-        """Actualiza las estadísticas mostradas en pantalla (solo datos confiables)"""
+        """Actualiza las estadísticas mostradas en pantalla"""
         stats = self.ticket_manager.obtener_estadisticas_turno()
 
         stats_text = (
             f"Tickets OK: {stats['total_ok']}\n"
             f"Cancelados: {stats['total_cancelados']}\n"
-            f"Total escaneados: {stats['total_escaneados']}\n"
-            f"Monto acumulado: ${stats['monto_ok']:.2f}"
+            f"Total escaneados: {stats['total_escaneados']}"
         )
 
-        if stats['monto_cancelado'] > 0:
-            stats_text += f"\nMonto cancelado (no suma): ${stats['monto_cancelado']:.2f}"
-        
         self.label_stats.config(text=stats_text)
         
         # Actualizar subtítulo con turno
@@ -435,10 +484,8 @@ class AplicacionTickets:
                 bg="#34495e", fg="white", width=12).pack(side="left", padx=5)
         tk.Label(header_frame, text="Hora", font=("Arial", 10, "bold"), 
                 bg="#34495e", fg="white", width=12).pack(side="left", padx=5)
-        tk.Label(header_frame, text="Monto", font=("Arial", 10, "bold"), 
-                bg="#34495e", fg="white", width=12).pack(side="left", padx=5)
         tk.Label(header_frame, text="Revisar Cámaras", font=("Arial", 10, "bold"), 
-                bg="#34495e", fg="white", width=20).pack(side="left", padx=5)
+                bg="#34495e", fg="white", width=30).pack(side="left", padx=5)
         
         # Contador de faltantes
         total_faltantes = sum(1 for t in tickets_detalle if t['status'] == 'FALTANTE')
@@ -465,10 +512,8 @@ class AplicacionTickets:
                             bg="#ffcccc", fg="#c0392b", width=12).pack(side="left", padx=5)
                     tk.Label(fila_frame, text=ticket['hora'], font=("Arial", 10), 
                             bg="#ffcccc", fg="#c0392b", width=12).pack(side="left", padx=5)
-                    tk.Label(fila_frame, text=ticket['monto'], font=("Arial", 10), 
-                            bg="#ffcccc", fg="#c0392b", width=12).pack(side="left", padx=5)
                     tk.Label(fila_frame, text=ticket['horario_camaras'], font=("Arial", 10, "bold"), 
-                            bg="#ffcccc", fg="#c0392b", width=20).pack(side="left", padx=5)
+                            bg="#ffcccc", fg="#c0392b", width=30).pack(side="left", padx=5)
                 elif ticket['status'] == 'CANCELADO':
                     # Ticket cancelado en GRIS
                     fila_frame = tk.Frame(scrollable_frame, bg="#eeeeee", bd=1, relief="solid")
@@ -480,10 +525,8 @@ class AplicacionTickets:
                             bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
                     tk.Label(fila_frame, text=ticket['hora'], font=("Arial", 10), 
                             bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
-                    tk.Label(fila_frame, text=ticket['monto'], font=("Arial", 10), 
-                            bg="#eeeeee", fg="#7f8c8d", width=12).pack(side="left", padx=5)
-                    tk.Label(fila_frame, text="(no suma)", font=("Arial", 10, "italic"), 
-                            bg="#eeeeee", fg="#7f8c8d", width=20).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text="(cancelado)", font=("Arial", 10, "italic"), 
+                            bg="#eeeeee", fg="#7f8c8d", width=30).pack(side="left", padx=5)
                 else:
                     # Ticket OK en blanco
                     fila_frame = tk.Frame(scrollable_frame, bg="white", bd=1, relief="flat")
@@ -495,10 +538,8 @@ class AplicacionTickets:
                             bg="white", fg="#27ae60", width=12).pack(side="left", padx=5)
                     tk.Label(fila_frame, text=ticket['hora'], font=("Arial", 10), 
                             bg="white", fg="#2c3e50", width=12).pack(side="left", padx=5)
-                    tk.Label(fila_frame, text=ticket['monto'], font=("Arial", 10), 
-                            bg="white", fg="#2c3e50", width=12).pack(side="left", padx=5)
-                    tk.Label(fila_frame, text="", font=("Arial", 10), 
-                            bg="white", fg="#2c3e50", width=20).pack(side="left", padx=5)
+                    tk.Label(fila_frame, text="---", font=("Arial", 10), 
+                            bg="white", fg="#2c3e50", width=30).pack(side="left", padx=5)
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -527,26 +568,43 @@ class AplicacionTickets:
         stats = self.ticket_manager.obtener_estadisticas_turno()
         tk.Label(
             resumen_frame,
-            text=(
-                f"Cancelados en turno: {stats['total_cancelados']}  "
-                f"(monto cancelado: ${stats['monto_cancelado']:.2f})"
-            ),
+            text=f"Cancelados en turno: {stats['total_cancelados']}",
             font=("Arial", 11),
             bg="#ecf0f1",
             fg="#7f8c8d"
         ).pack(pady=(8, 0))
         
+        # Botones al final
+        btn_frame = tk.Frame(resumen_frame, bg="#ecf0f1")
+        btn_frame.pack(pady=15)
+        
+        # Botón imprimir resumen
+        btn_imprimir = tk.Button(
+            btn_frame,
+            text="🖨️ Imprimir Resumen",
+            command=self.imprimir_resumen,
+            font=("Arial", 11, "bold"),
+            bg="#27ae60",
+            fg="white",
+            width=18,
+            relief="raised",
+            bd=2
+        )
+        btn_imprimir.pack(side="left", padx=5)
+        
         # Botón cerrar
         btn_cerrar = tk.Button(
-            ventana_resumen,
+            btn_frame,
             text="Cerrar",
             command=ventana_resumen.destroy,
-            font=("Arial", 12),
+            font=("Arial", 11),
             bg="#95a5a6",
             fg="white",
-            width=10
+            width=10,
+            relief="raised",
+            bd=2
         )
-        btn_cerrar.pack(pady=(0, 20))
+        btn_cerrar.pack(side="left", padx=5)
 
     def toggle_topmost(self):
         """Activa/Desactiva que la ventana principal quede siempre visible"""
@@ -628,15 +686,13 @@ class AplicacionTickets:
             f"Fecha: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
             "",
             f"Total de tickets procesados:",
-            f"{stats['total_ok']}",
-            f"Monto total: ${stats['monto_ok']:.2f}",
+            f"OK: {stats['total_ok']}",
             ""
         ]
         
         # Cancelados si hay
         if stats['total_cancelados'] > 0:
-            lineas.append(f"\nTICKETS CANCELADOS: {stats['total_cancelados']}")
-            lineas.append(f"Monto cancelado (no suma): ${stats['monto_cancelado']:.2f}")
+            lineas.append(f"TICKETS CANCELADOS: {stats['total_cancelados']}")
             lineas.append("")
         
         # Tickets faltantes
@@ -649,6 +705,11 @@ class AplicacionTickets:
                 if ticket['status'] == 'FALTANTE':
                     folio_str = f"Folio {ticket['folio']}"
                     lineas.append(folio_str)
+                    
+                    # Si tiene hora exacta (codigo escanizado), mostrarla
+                    if ticket['hora'] and ticket['hora'] != '---':
+                        lineas.append(f"Hora: {ticket['hora']}")
+                    
                     lineas.append(f"Revisar camaras:")
                     if ticket['horario_camaras']:
                         # Partir el horario en dos líneas si es necesario
