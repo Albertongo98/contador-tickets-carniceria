@@ -221,6 +221,16 @@
         <div class="msg" id="cfg-msg"></div>
         <div class="acciones"><button onclick="guardarConfig()">Guardar y probar</button></div>
       </div>
+      <div class="modal hoja">
+        <h4>Actualizaciones</h4>
+        <p style="margin:0;color:var(--gris)">Versión <b id="act-version">—</b>. Se revisa sola al abrir y cada 6 horas; al actualizar se cierra un momento y vuelve a abrir. Los datos de la caja no se tocan.</p>
+        <p id="act-notas" class="oculto" style="margin:10px 0 0"></p>
+        <div class="msg" id="act-msg" style="color:var(--gris)"></div>
+        <div class="acciones">
+          <button class="suave" onclick="buscarActualizacion()">Buscar actualizaciones</button>
+          <button id="btn-actualizar" class="oculto" onclick="actualizarAhora()">⬆ Actualizar ahora</button>
+        </div>
+      </div>
     </section>
   </main>
 </div>
@@ -275,6 +285,14 @@ function mostrarVista(v) {
   if (v === 'config' && window.pywebview) api().config_eleventa().then((c) => {
     $('cfg-servidor').value = c.servidor; $('cfg-ruta').value = c.ruta; $('cfg-msg').textContent = '';
   });
+}
+async function buscarActualizacion() {
+  $('act-msg').textContent = 'Revisando…';
+  const r = await api().buscar_actualizacion(); $('act-msg').textContent = r.mensaje; refrescar();
+}
+async function actualizarAhora() {
+  if (!confirm('El Contador se cerrará un momento para actualizarse y volverá a abrir solo. ¿Actualizar ahora?')) return;
+  const r = await api().actualizar(); $('act-msg').textContent = r.mensaje;
 }
 async function guardarConfig() {
   $('cfg-msg').style.color = 'var(--gris)'; $('cfg-msg').textContent = 'Probando conexión…';
@@ -364,7 +382,13 @@ async function refrescar() {
   if (f.tablet === true) chips.push(f.eleventa === true ? '<span class="chip">eleventa ✓</span>'
                                     : `<span class="chip mal">eleventa ✗ ${esc(f.eleventa || 'sin configurar')}</span>`);
   if (s.actualizado) chips.push(`<span class="chip">actualizado ${s.actualizado}</span>`);
+  if (s.nueva) chips.push(`<span class="chip" style="cursor:pointer;border-color:var(--verde);color:var(--verde)" onclick="mostrarVista('config')">⬆ Versión ${esc(s.nueva.versionName)} disponible</span>`);
   $('fuentes').innerHTML = chips.join('');
+  $('act-version').textContent = s.version;
+  $('act-notas').classList.toggle('oculto', !s.nueva);
+  if (s.nueva) $('act-notas').textContent = `Nueva: ${s.nueva.versionName}` + (s.nueva.notas ? ` — ${s.nueva.notas}` : '');
+  $('btn-actualizar').classList.toggle('oculto', !s.nueva || !!s.actualizando);
+  if (s.actualizando) $('act-msg').textContent = s.actualizando;
 
   const c = s.conteo;
   $('n-impresos').textContent = n(s.impresos);

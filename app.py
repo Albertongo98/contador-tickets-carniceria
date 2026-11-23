@@ -24,7 +24,9 @@ import webview
 import verificar as V
 from registro import Registro
 
+VERSION, VERSION_CODE = "2.0", 20  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
 CADA = 60  # segundos entre revisiones automáticas
+CADA_VERSION = 6 * 3600  # buscar actualizaciones al abrir y cada 6 h
 CONTROL = re.compile(r"^(\d{6})\D(\d{1,5})$")  # HHmmss-folio (el lector puede mandar ' en vez de -)
 UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "index.html")
 TAM_WIDGET = (480, 150)
@@ -34,6 +36,19 @@ RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
 NOMBRE_RUN = "ContadorTicketsLaPalma"
 user32 = ctypes.windll.user32
 dwmapi = ctypes.windll.dwmapi
+
+
+def script_actualizar(pid, nuevo, prog, tmp):
+    """.bat que espera a que este proceso se cierre, copia la versión nueva encima del programa (sin borrar nada más),
+    lo vuelve a abrir y se limpia."""
+    # Rutas completas (otro find/timeout en el PATH, p. ej. el de Git, rompe la espera) y ping como pausa: timeout.exe
+    # falla sin consola, y el .bat corre sin ventana.
+    s32 = r"%SystemRoot%\System32"
+    return (f'@echo off\r\n:espera\r\n{s32}\\tasklist.exe /FI "PID eq {pid}" | {s32}\\find.exe "{pid}" >nul && '
+            f'({s32}\\PING.EXE -n 2 127.0.0.1 >nul & goto espera)\r\n'
+            f'robocopy "{nuevo}" "{prog}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS >nul\r\n'
+            f'start "" "{os.path.join(prog, "SistemaTickets.exe")}"\r\n'
+            f'rmdir /s /q "{tmp}"\r\ndel "%~f0"\r\n')
 
 
 def autoinicio_activo():
@@ -96,8 +111,65 @@ class Contador:
         self._ajena = None  # última ventana de otro programa con el foco (eleventa)
         self._widget = self._completa = None
         self._saliendo = False
+        self._nueva, self._actualizando = None, None  # versión publicada más nueva; texto del avance al actualizar
         threading.Thread(target=self._ciclo, daemon=True).start()
         threading.Thread(target=self._vigilar_foco, daemon=True).start()
+        threading.Thread(target=self._vigilar_version, daemon=True).start()
+
+    # --- Actualizaciones (Storage + config/versiones de PalmApp) -----------------------------------------------
+    def _vigilar_version(self):
+        import time
+        while True:
+            self.buscar_actualizacion()
+            time.sleep(CADA_VERSION)
+
+    def buscar_actualizacion(self):
+        if not (self._palmapp and self._palmapp.conectado):
+            return {"ok": False, "mensaje": "Primero conecta esta caja con PalmApp (Tablero)."}
+        try:
+            v = self._palmapp.version_publicada("contador")
+        except Exception as e:
+            return {"ok": False, "mensaje": f"No se pudo revisar: {e}"}
+        self._nueva = v if v and v.get("versionCode", 0) > VERSION_CODE else None
+        if self._nueva:
+            return {"ok": True, "mensaje": f"Hay versión nueva: {self._nueva['versionName']}", "nueva": self._nueva}
+        return {"ok": True, "mensaje": f"Ya tienes la versión más nueva ({VERSION})."}
+
+    def actualizar(self):
+        """Descarga el zip, revisa que llegó completo (sha256), se cierra y un .bat copia la versión nueva encima del
+        programa y lo vuelve a abrir. Los datos (%APPDATA%\\ContadorTickets) no se tocan."""
+        if not getattr(sys, "frozen", False):
+            return {"ok": False, "mensaje": "Solo se actualiza el programa instalado (SistemaTickets.exe)."}
+        if not self._nueva or self._actualizando:
+            return {"ok": False, "mensaje": "No hay actualización pendiente."}
+        threading.Thread(target=self._actualizar, args=(self._nueva,), daemon=True).start()
+        return {"ok": True, "mensaje": "Descargando…"}
+
+    def _actualizar(self, v):
+        import hashlib, shutil, time, zipfile
+        tmp = None
+        try:
+            tmp = tempfile.mkdtemp(prefix="ContadorTickets_")
+            zip_ = os.path.join(tmp, "nuevo.zip")
+            self._palmapp.descargar(v["ruta"], zip_, lambda f: setattr(self, "_actualizando", f"Descargando {f:.0%}"))
+            with open(zip_, "rb") as f:
+                if v.get("sha256") and hashlib.sha256(f.read()).hexdigest() != v["sha256"]:
+                    raise ValueError("el archivo llegó incompleto o dañado")
+            self._actualizando = "Instalando…"
+            zipfile.ZipFile(zip_).extractall(os.path.join(tmp, "nuevo"))
+            nuevo = next(r for r, _, fs in os.walk(os.path.join(tmp, "nuevo")) if "SistemaTickets.exe" in fs)
+            prog, pid = V.programa(), os.getpid()
+            bat = os.path.join(tempfile.gettempdir(), f"actualizar_contador_{pid}.bat")
+            with open(bat, "w", encoding="mbcs") as f:
+                f.write(script_actualizar(pid, nuevo, prog, tmp))
+            subprocess.Popen(["cmd", "/c", bat], creationflags=0x08000000 | 0x00000200)  # sin ventana, grupo aparte
+            time.sleep(0.5)
+            self.salir()
+        except Exception as e:
+            self._actualizando = None
+            self._ultimo = {"n": self._ultimo["n"] + 1, "tipo": "error", "texto": f"No se pudo actualizar: {e}"}
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
 
     # --- Revisión en segundo plano ------------------------------------------------------------------------------
     def _ciclo(self):
@@ -167,6 +239,8 @@ class Contador:
             "resoluciones": V.RESOLUCIONES,
             "ahora": V.ahora_juarez().strftime("%Y-%m-%dT%H:%M:%S"),
             "autoinicio": autoinicio_activo() if getattr(sys, "frozen", False) else None,  # None: no aplica (desarrollo)
+            "version": VERSION, "nueva": self._nueva and {k: self._nueva.get(k) for k in ("versionName", "notas")},
+            "actualizando": self._actualizando,
         }
 
     def escanear(self, codigo, desde_widget=False):

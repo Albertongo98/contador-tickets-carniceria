@@ -100,6 +100,27 @@ class PalmApp:
         return valor({"mapValue": doc}).get("tickets", [])
 
 
+    def _token_fresco(self):
+        with open(self.archivo, encoding="utf-8") as f:
+            return self._refrescar(json.load(f)["refresh_token"])
+
+    def version_publicada(self, app="contador"):
+        """La última versión publicada (config/versiones.<app>, la escribe tools/publicar_version.py de PalmApp), o None."""
+        req = urllib.request.Request(f"{FIRESTORE}/config/versiones",
+                                     headers={"Authorization": f"Bearer {self._token_fresco()}"})
+        return valor({"mapValue": _abrir(req)}).get(app)
+
+    def descargar(self, ruta, destino, progreso=lambda f: None):
+        """Descarga un archivo de Storage (actualizaciones/...): solo equipos aprobados (storage.rules)."""
+        url = f"https://firebasestorage.googleapis.com/v0/b/{PROYECTO}.firebasestorage.app/o/" \
+              f"{urllib.parse.quote(ruta, safe='')}?alt=media"
+        req = urllib.request.Request(url, headers={"Authorization": f"Firebase {self._token_fresco()}"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(destino, "wb") as f:
+            total, leido = int(r.headers.get("Content-Length") or 0), 0
+            while bloque := r.read(256 * 1024):
+                f.write(bloque); leido += len(bloque)
+                if total: progreso(leido / total)
+
     def avisar_duena(self, id_aviso, titulo, mensaje):
         """Notificación urgente a la dueña en PalmApp (colección `avisos`; la entrega la función avisoNuevo).
         Con id fijo: si ya existe no se repite (Firestore responde ALREADY_EXISTS)."""
