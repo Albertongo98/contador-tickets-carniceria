@@ -1,26 +1,24 @@
 # Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.env
 .venv/
 
-# PyInstaller
+# PyInstaller (el .spec SÍ se sube: arma el programa portable)
 build/
 dist/
-*.spec
 
-# VSCode
-.vscode/
+# Cliente de Firebird (DLL de terceros, 12 MB): se copia de eleventa-pruebas\fb25 (ver README)
+firebird/
 
-# Archivos temporales
-*.log
-*.tmp
+# Datos de la caja y secretos: NUNCA al repo (es público)
+*.json
+!config.ejemplo.json
+*.db
+webview/
 
 # Sistema
+*.log
+*.tmp
+.vscode/
 .DS_Store
 Thumbs.db
-
-# Datos
-*.json

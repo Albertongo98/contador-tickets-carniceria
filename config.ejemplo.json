@@ -1,0 +1,8 @@
+{
+  "api_key": "PEGA_AQUI_LA_API_KEY_DE_FIREBASE (la de google-services.json de PalmApp/CarniceriaApp)",
+  "eleventa": "127.0.0.1:C:\\Program Files (x86)\\AbarrotesMultiCaja\\db\\PDVDATA.FDB",
+  "fbclient": "firebird\\fbembed.dll",
+  "transparencia_widget": 0.82,
+  "regresar_foco": true,
+  "vista_inicial": "escaner"
+}
