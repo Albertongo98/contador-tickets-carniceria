@@ -84,12 +84,12 @@
           font-size: 13px; color: var(--gris); }
   .chip.mal { background: var(--amarillo); color: var(--tinta); border-color: var(--amarillo); }
   .cuentas { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .cuenta { background: var(--tarjeta); border-radius: 16px; padding: 14px 18px; box-shadow: var(--sombra); }
+  .cuenta { background: var(--tarjeta); border-radius: 18px; padding: 14px 18px; box-shadow: var(--sombra); }
   .cuenta b { display: block; font: 700 36px/1.1 var(--titulo); }
   .cuenta span { color: var(--gris); font-size: 13px; }
   h3 { font: 600 17px var(--titulo); margin: 6px 0 10px; color: var(--verde-oscuro); }
   h3.rojo { color: var(--rojo); }
-  .alarma { background: var(--rojo-suave); border-radius: 16px; padding: 14px 18px; margin-bottom: 10px;
+  .alarma { background: var(--rojo-suave); border-radius: 18px; padding: 14px 18px; margin-bottom: 10px;
             display: flex; gap: 16px; align-items: center; flex-wrap: wrap; box-shadow: var(--sombra);
             border-left: 6px solid var(--rojo); }
   .alarma .info { flex: 1; min-width: 260px; }
@@ -98,7 +98,7 @@
   .alarma .cam { display: inline-block; margin-top: 6px; background: #fff; border-radius: 999px; padding: 2px 10px;
                  font-size: 13px; font-weight: 600; }
   .en-orden { color: var(--verde); font-weight: 600; margin: 0 0 18px 4px; }
-  .lista { background: var(--tarjeta); border-radius: 16px; box-shadow: var(--sombra); overflow: hidden; }
+  .lista { background: var(--tarjeta); border-radius: 18px; box-shadow: var(--sombra); overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; background: var(--verde); color: #fff; font-weight: 600; padding: 9px 12px; position: sticky; top: 0; }
   td { padding: 8px 12px; border-top: 1px solid #efe6d6; vertical-align: top; }
@@ -138,6 +138,8 @@
                  background: var(--tarjeta); user-select: text; }
   .modal input:focus { outline: 2px solid var(--verde); border-color: transparent; }
   .modal .acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  /* Configuración: tarjeta de página (DESIGN.md), no diálogo flotante */
+  .modal.hoja { background: var(--tarjeta); border: 1.5px solid var(--borde); border-radius: 18px; box-shadow: var(--sombra); margin: 24px auto; }
   .modal .msg { color: var(--rojo); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
 </style>
 </head>
@@ -209,7 +211,7 @@
     </section>
 
     <section id="vista-config" class="oculto">
-      <div class="modal" style="margin: 24px auto">
+      <div class="modal hoja">
         <h4>Base de datos de eleventa</h4>
         <p style="margin:0;color:var(--gris)">La PC donde corre el servidor de eleventa. Si es esta misma caja: 127.0.0.1</p>
         <label for="cfg-servidor">IP del servidor</label>
