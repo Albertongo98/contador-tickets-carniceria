@@ -210,6 +210,32 @@ class Contador:
         except Exception as e:
             return {"ok": False, "mensaje": f"No se pudo conectar: {e}"}
 
+    def config_eleventa(self):
+        """Para la pantalla Configuración: {servidor, ruta} de lo que hay en config.json."""
+        servidor, _, ruta = self._cfg.get("eleventa", "").partition(":")
+        return {"servidor": servidor, "ruta": ruta}
+
+    def guardar_eleventa(self, servidor, ruta):
+        """Guarda dónde está la base de eleventa y prueba la conexión (se guarda aunque falle: el servidor puede estar
+        apagado ahorita)."""
+        try:
+            dsn = V.dsn_eleventa(servidor or "", ruta or "")
+        except ValueError as e:
+            return {"ok": False, "mensaje": str(e)}
+        cfg = {**self._cfg, "eleventa": dsn}
+        try:
+            V.guardar_config(cfg)
+        except OSError as e:
+            return {"ok": False, "mensaje": f"No se pudo guardar config.json: {e}"}
+        self._cfg = cfg
+        V._desde_id.clear()  # otra base: otros IDs
+        self._despertar.set()
+        try:
+            V.conectar_eleventa(cfg).close()
+            return {"ok": True, "mensaje": "Guardado. Conexión con eleventa ✓"}
+        except Exception as e:
+            return {"ok": False, "mensaje": f"Guardado, pero no conecta con eleventa: {e}"}
+
     def imprimir(self):
         """Reporte del día para la impresora térmica de 57 mm (32 columnas), con la impresora predeterminada."""
         f, ancho, c = self._filas, 32, self.estado()["conteo"]

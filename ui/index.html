@@ -163,6 +163,7 @@
     <div class="pestanas">
       <button id="tab-escaner" onclick="mostrarVista('escaner')">Escáner</button>
       <button id="tab-tablero" onclick="mostrarVista('tablero')">Tablero</button>
+      <button id="tab-config" onclick="mostrarVista('config')">Configuración</button>
     </div>
     <span id="reloj"></span>
     <button class="suave" onclick="api().al_widget()" title="Volver al widget flotante">▭ Widget</button>
@@ -204,6 +205,19 @@
         </label>
         <button class="suave oculto" id="btn-conectar" onclick="abrirConectar()">🔗 Conectar con PalmApp</button>
         <button onclick="imprimir()">🖨 Imprimir reporte del día</button>
+      </div>
+    </section>
+
+    <section id="vista-config" class="oculto">
+      <div class="modal" style="margin: 24px auto">
+        <h4>Base de datos de eleventa</h4>
+        <p style="margin:0;color:var(--gris)">La PC donde corre el servidor de eleventa. Si es esta misma caja: 127.0.0.1</p>
+        <label for="cfg-servidor">IP del servidor</label>
+        <input id="cfg-servidor" placeholder="127.0.0.1" autocomplete="off" spellcheck="false">
+        <label for="cfg-ruta">Ruta de la base en esa PC</label>
+        <input id="cfg-ruta" placeholder="C:\Program Files (x86)\AbarrotesMultiCaja\db\PDVDATA.FDB" autocomplete="off" spellcheck="false">
+        <div class="msg" id="cfg-msg"></div>
+        <div class="acciones"><button onclick="guardarConfig()">Guardar y probar</button></div>
       </div>
     </section>
   </main>
@@ -251,9 +265,19 @@ function mostrarVista(v) {
   vista = v;
   $('vista-escaner').classList.toggle('oculto', v !== 'escaner');
   $('vista-tablero').classList.toggle('oculto', v !== 'tablero');
+  $('vista-config').classList.toggle('oculto', v !== 'config');
   $('tab-escaner').classList.toggle('activa', v === 'escaner');
   $('tab-tablero').classList.toggle('activa', v === 'tablero');
+  $('tab-config').classList.toggle('activa', v === 'config');
   if (v === 'escaner') setTimeout(() => $('c-codigo').focus(), 50);
+  if (v === 'config' && window.pywebview) api().config_eleventa().then((c) => {
+    $('cfg-servidor').value = c.servidor; $('cfg-ruta').value = c.ruta; $('cfg-msg').textContent = '';
+  });
+}
+async function guardarConfig() {
+  $('cfg-msg').style.color = 'var(--gris)'; $('cfg-msg').textContent = 'Probando conexión…';
+  const r = await api().guardar_eleventa($('cfg-servidor').value, $('cfg-ruta').value);
+  $('cfg-msg').style.color = r.ok ? 'var(--verde)' : 'var(--rojo)'; $('cfg-msg').textContent = r.mensaje;
 }
 mostrarVista('escaner');
 

@@ -9,6 +9,7 @@ Si falta internet o eleventa, se usa lo que haya. `conciliar.py` y `eleventa.py`
 """
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 
@@ -128,17 +129,39 @@ def config():
         return json.load(f)
 
 
+def guardar_config(cfg):
+    with open(os.path.join(carpeta(), "config.json"), "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
 _desde_id = {}  # fecha → último ID de eleventa antes de ese día (la búsqueda tarda ~3 s: una vez al día)
 
 
-def leer_eleventa(cfg, dia):
+SERVIDOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]*(/\d{1,5})?$")  # IP o nombre de la PC, puerto opcional: 192.168.1.10/3050
+
+
+def dsn_eleventa(servidor, ruta):
+    """Pantalla Configuración → valor de config.json 'eleventa'. ValueError con el mensaje para la pantalla."""
+    servidor, ruta = servidor.strip(), ruta.strip()
+    if not SERVIDOR.match(servidor) or len(servidor) == 1:  # una letra sola sería un disco (C:): archivo directo
+        raise ValueError("Escribe la IP o el nombre de la PC donde está eleventa (ej. 127.0.0.1 o 192.168.1.10)")
+    if not re.match(r"^[A-Za-z]:\\.+\.FDB$", ruta, re.I):
+        raise ValueError("La ruta debe ser la de la base en esa PC, ej. C:\\...\\PDVDATA.FDB")
+    return f"{servidor}:{ruta}"
+
+
+def conectar_eleventa(cfg):
     import eleventa  # aquí: sin fdb el Contador sigue funcionando
     dsn = cfg["eleventa"]
     # Nunca abrir el archivo directo (modo embebido = acceso exclusivo: bloquearía la caja). Siempre por el servidor.
     if len(dsn.split(":", 1)[0]) <= 1 and not cfg.get("solo_pruebas_archivo_directo"):
         raise ValueError("config.json: 'eleventa' debe ser 127.0.0.1:C:\\...\\PDVDATA.FDB (por el servidor)")
-    lib = os.path.join(programa(), cfg.get("fbclient", r"firebird\fbembed.dll"))
-    con = eleventa.conectar(dsn, lib)
+    return eleventa.conectar(dsn, os.path.join(programa(), cfg.get("fbclient", r"firebird\fbembed.dll")))
+
+
+def leer_eleventa(cfg, dia):
+    import eleventa
+    con = conectar_eleventa(cfg)
     try:
         if dia not in _desde_id:  # margen de 3 h: el reloj de la caja puede ir desfasado
             _desde_id[dia] = eleventa.primer_id_desde(con, datetime.combine(dia, datetime.min.time()) - timedelta(hours=3))

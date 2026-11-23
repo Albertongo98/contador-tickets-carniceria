@@ -64,4 +64,16 @@ r.revisar(J("10:05"), 3, "Cancelado")
 assert r.revisados(hoy) == {3: ("Cancelado", "10:05")}
 r.avisado(hoy, 3)
 assert r.avisados(hoy) == {3}
+
+# Configuración: IP o nombre de la PC (puerto opcional) + ruta .FDB; nunca una letra de disco (archivo directo).
+from verificar import dsn_eleventa
+assert dsn_eleventa(" 192.168.1.10 ", r"C:\db\PDVDATA.FDB") == r"192.168.1.10:C:\db\PDVDATA.FDB"
+assert dsn_eleventa("CAJA1/3050", r"D:\x\pdvdata.fdb") == r"CAJA1/3050:D:\x\pdvdata.fdb"
+for malo in [("C", r"C:\db\PDVDATA.FDB"), ("", r"C:\db\PDVDATA.FDB"), ("1.2.3.4:5", r"C:\db\PDVDATA.FDB"),
+             ("127.0.0.1", "PDVDATA.FDB"), ("127.0.0.1", r"C:\db\otra.txt")]:
+    try:
+        dsn_eleventa(*malo)
+        raise AssertionError(malo)
+    except ValueError:
+        pass
 print("ok")
