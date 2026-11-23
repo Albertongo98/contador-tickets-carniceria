@@ -24,7 +24,7 @@ import webview
 import verificar as V
 from registro import Registro
 
-VERSION, VERSION_CODE = "2.0", 20  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
+VERSION, VERSION_CODE = "2.1", 21  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
 CADA = 60  # segundos entre revisiones automáticas
 CADA_VERSION = 6 * 3600  # buscar actualizaciones al abrir y cada 6 h
 CONTROL = re.compile(r"^(\d{6})\D(\d{1,5})$")  # HHmmss-folio (el lector puede mandar ' en vez de -)
@@ -193,8 +193,10 @@ class Contador:
         if fuentes.get("eleventa") is not True or not self._palmapp:
             return
         ya = self._registro.avisados(dia)
+        limite = (V.ahora_juarez() - V.AVISO_DUENA).strftime("%H:%M:%S")  # impreso antes de esto (mismo día, HH:MM:SS)
         for a in filas:
-            if a["estado"] in V.ALARMAS and a["folio"] not in ya:
+            # A la dueña hasta AVISO_DUENA: entre GRACIA y eso, solo el Tablero (casi siempre se cobra en ese rato).
+            if a["estado"] in V.ALARMAS and a["folio"] not in ya and a["hora"] and a["hora"] <= limite:
                 try:
                     self._palmapp.avisar_duena(
                         f"carniceria_{dia}_{a['folio']:03d}", f"⚠ Carnicería: ticket {a['estado'].lower()}",

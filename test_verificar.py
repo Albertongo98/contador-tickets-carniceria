@@ -29,7 +29,7 @@ tablet = [de_firestore(t) for t in [
     fs(4, "09:25", ("1078", 85.0)),                 # escaneado, pero no se cobró → SIN COBRO
     fs(5, "09:30", ("1019", 10.0), anulado=True),   # anulado en la tablet
     fs(6, "09:35", ("1090", 60.0)),                 # faltante ya revisado por el gerente
-    fs(7, "09:50", ("1072", 20.0)),                 # recién impreso → EN CAMINO
+    fs(7, "09:58", ("1072", 20.0)),                 # recién impreso (< GRACIA) → EN CAMINO
 ]]
 assert tablet[0]["folio"] == 1 and tablet[0]["hora"] == J("09:00")
 renglones = [caja(1, "08:01", "1098", 71.0), caja(2, "08:12", "1091", 50.0), caja(9, "08:40", "1099", 9.0)]
