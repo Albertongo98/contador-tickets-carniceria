@@ -202,6 +202,9 @@
       </table></div>
       <div class="pie">
         <button class="suave" onclick="salir()" title="Deja de vigilar los tickets">Cerrar programa</button>
+        <label class="interruptor" title="El widget queda encima de eleventa para escanear sin minimizarla">
+          <input type="checkbox" id="chk-visible" onchange="cambiarVisible(this.checked)"><span></span>Widget siempre visible
+        </label>
         <label class="interruptor oculto" id="lbl-autoinicio" style="margin-right:auto">
           <input type="checkbox" id="chk-autoinicio" onchange="cambiarAutoinicio(this.checked)"><span></span>Abrir al iniciar Windows
         </label>
@@ -398,6 +401,7 @@ async function refrescar() {
   $('btn-conectar').classList.toggle('oculto', !s.hay_palmapp || s.conectado);
   $('lbl-autoinicio').classList.toggle('oculto', s.autoinicio == null);
   if (s.autoinicio != null && document.activeElement !== $('chk-autoinicio')) $('chk-autoinicio').checked = s.autoinicio;
+  if (document.activeElement !== $('chk-visible')) $('chk-visible').checked = s.siempre_visible;
 
   const alarmas = s.filas.filter((x) => x.estado === 'FALTANTE' || x.estado === 'SIN COBRO');
   $('alarmas').innerHTML = alarmas.length ? alarmas.map((a) => `
@@ -452,6 +456,7 @@ async function conectar() {
   if (!r.ok) { $('con-msg').textContent = r.mensaje; return; }
   cerrarModal(); aviso(r.mensaje); refrescar();
 }
+async function cambiarVisible(activo) { const r = await api().siempre_visible(activo); aviso(r.mensaje); refrescar(); }
 async function cambiarAutoinicio(activo) { const r = await api().autoinicio(activo); aviso(r.mensaje); refrescar(); }
 function salir() {
   if (confirm('¿Cerrar el Contador de Tickets?\nMientras esté cerrado no se detectan tickets faltantes.')) api().salir();

@@ -24,7 +24,7 @@ import webview
 import verificar as V
 from registro import Registro
 
-VERSION, VERSION_CODE = "2.1", 21  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
+VERSION, VERSION_CODE = "2.2", 22  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
 CADA = 60  # segundos entre revisiones automáticas
 CADA_VERSION = 6 * 3600  # buscar actualizaciones al abrir y cada 6 h
 CONTROL = re.compile(r"^(\d{6})\D(\d{1,5})$")  # HHmmss-folio (el lector puede mandar ' en vez de -)
@@ -209,11 +209,25 @@ class Contador:
     # --- Foco: regresar a eleventa después de escanear en el widget ----------------------------------------------
     def _vigilar_foco(self):
         import time
+        n = 0
         while True:
             h = user32.GetForegroundWindow()
             if h and not _es_nuestra(h):
                 self._ajena = h
+            n += 1
+            if n % 4 == 0 and self._cfg.get("siempre_visible", True):
+                self._al_frente(True)  # cada segundo: eleventa (u otro) puede ponerse también «siempre encima»
             time.sleep(0.25)
+
+    def _al_frente(self, si):
+        """Widget arriba de todo (HWND_TOPMOST) o normal (HWND_NOTOPMOST), sin quitarle el foco a eleventa."""
+        try:
+            hwnd = ctypes.c_void_p(self._widget.native.Handle.ToInt64())
+            if user32.IsWindowVisible(hwnd):
+                user32.SetWindowPos(hwnd, ctypes.c_void_p(-1 if si else -2), 0, 0, 0, 0,
+                                    0x0001 | 0x0002 | 0x0010)  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+        except Exception:
+            pass
 
     def _regresar_foco(self):
         h = self._ajena
@@ -241,6 +255,7 @@ class Contador:
             "resoluciones": V.RESOLUCIONES,
             "ahora": V.ahora_juarez().strftime("%Y-%m-%dT%H:%M:%S"),
             "autoinicio": autoinicio_activo() if getattr(sys, "frozen", False) else None,  # None: no aplica (desarrollo)
+            "siempre_visible": self._cfg.get("siempre_visible", True),
             "version": VERSION, "nueva": self._nueva and {k: self._nueva.get(k) for k in ("versionName", "notas")},
             "actualizando": self._actualizando,
         }
@@ -263,6 +278,17 @@ class Contador:
         if desde_widget and r["tipo"] != "error":
             threading.Timer(0.6, self._regresar_foco).start()  # deja ver el ✓ un instante
         return self._ultimo
+
+    def siempre_visible(self, activo):
+        """Widget encima de eleventa para escanear sin minimizarla. Se guarda en config.json de esta caja."""
+        cfg = {**self._cfg, "siempre_visible": bool(activo)}
+        try:
+            V.guardar_config(cfg)
+        except OSError as e:
+            return {"ok": False, "mensaje": f"No se pudo guardar: {e}"}
+        self._cfg = cfg
+        self._al_frente(bool(activo))
+        return {"ok": True, "mensaje": "El widget queda siempre visible" if activo else "El widget ya no queda encima"}
 
     def autoinicio(self, activo):
         try:
