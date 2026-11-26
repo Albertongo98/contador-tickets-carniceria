@@ -64,6 +64,7 @@ Ver `config.ejemplo.json`. El de la caja tiene la API key de Firebase y **no se 
 ```
 pip install -r requirements.txt
 python test_verificar.py          # pruebas sin internet ni eleventa
+python test_palmapp.py            # la sesión con PalmApp se renueva sola
 python app.py [--completa]        # widget (o ventana completa)
 pyinstaller SistemaTickets.spec   # → dist\SistemaTickets\ (portable)
 ```
