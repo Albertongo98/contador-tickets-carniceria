@@ -382,6 +382,8 @@ async function refrescar() {
   const f = s.fuentes, chips = [];
   if (s.error_config) chips.push(`<span class="chip mal">${esc(s.error_config)}</span>`);
   chips.push(f.tablet === true ? '<span class="chip">Tablet ✓</span>' : `<span class="chip mal">Tablet ✗ ${esc(f.tablet || '')}</span>`);
+  if (s.conectado) chips.push('<span class="chip" style="cursor:pointer;border-color:var(--verde);color:var(--verde)" ' +
+    'title="Vuelve a conectar con la tablet sin cerrar el programa" onclick="sincronizarTablet(this)">↻ Sincronizar tablet</span>');
   if (f.tablet === true) chips.push(f.eleventa === true ? '<span class="chip">eleventa ✓</span>'
                                     : `<span class="chip mal">eleventa ✗ ${esc(f.eleventa || 'sin configurar')}</span>`);
   if (s.actualizado) chips.push(`<span class="chip">actualizado ${s.actualizado}</span>`);
@@ -456,6 +458,7 @@ async function conectar() {
   if (!r.ok) { $('con-msg').textContent = r.mensaje; return; }
   cerrarModal(); aviso(r.mensaje); refrescar();
 }
+async function sincronizarTablet() { await api().sincronizar(); aviso('Sincronizando con la tablet…'); setTimeout(refrescar, 4000); }
 async function cambiarVisible(activo) { const r = await api().siempre_visible(activo); aviso(r.mensaje); refrescar(); }
 async function cambiarAutoinicio(activo) { const r = await api().autoinicio(activo); aviso(r.mensaje); refrescar(); }
 function salir() {

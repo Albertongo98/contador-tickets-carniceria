@@ -24,7 +24,7 @@ import webview
 import verificar as V
 from registro import Registro
 
-VERSION, VERSION_CODE = "2.2", 22  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
+VERSION, VERSION_CODE = "2.3", 23  # al publicar: subirlos y usar tools/publicar_version.py de PalmApp (app "contador")
 CADA = 60  # segundos entre revisiones automáticas
 CADA_VERSION = 6 * 3600  # buscar actualizaciones al abrir y cada 6 h
 CONTROL = re.compile(r"^(\d{6})\D(\d{1,5})$")  # HHmmss-folio (el lector puede mandar ' en vez de -)
@@ -296,6 +296,13 @@ class Contador:
             return {"ok": True, "mensaje": "Se abrirá al iniciar Windows" if activo else "Ya no se abrirá al iniciar Windows"}
         except OSError as e:
             return {"ok": False, "mensaje": f"No se pudo cambiar: {e}"}
+
+    def sincronizar(self):
+        """Botón «Sincronizar tablet»: reconecta con PalmApp y vuelve a leer ya, sin cerrar el programa."""
+        if self._palmapp:
+            self._palmapp.reconectar()
+        self._despertar.set()
+        return {"ok": True}
 
     def revisado(self, folio, resolucion):
         if resolucion not in V.RESOLUCIONES:

@@ -17,7 +17,9 @@ TIEMPO = 8  # segundos; sin internet el Contador sigue como antes
 
 
 class ErrorPalmApp(Exception):
-    pass
+    def __init__(self, msg, codigo=None):
+        super().__init__(msg)
+        self.codigo = codigo  # código HTTP (401 = sesión vencida, 404 = no existe); None = sin conexión
 
 
 def _post(url, datos, token=None, form=False):
@@ -38,7 +40,7 @@ def _abrir(req):
             msg = err.get("message", "") if isinstance(err, dict) else str(err)
         except Exception:
             msg = ""
-        raise ErrorPalmApp(msg or f"HTTP {e.code}") from None
+        raise ErrorPalmApp(msg or f"HTTP {e.code}", e.code) from None
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ErrorPalmApp(f"Sin conexión con PalmApp ({e})") from None
 
@@ -91,14 +93,20 @@ class PalmApp:
         try:
             doc = _abrir(req)
         except ErrorPalmApp as e:
-            if "not found" in str(e).lower() or "HTTP 404" in str(e):
+            if e.codigo == 404:
                 return []
-            if reintentar and ("UNAUTHENTICATED" in str(e).upper() or "HTTP 401" in str(e)):  # token vence en 1 h
-                self._token = None
+            # El token vence cada hora y Firestore responde 401 con «Request had invalid authentication credentials»
+            # (sin la palabra UNAUTHENTICATED): antes no se renovaba y la tablet quedaba ✗ hasta reiniciar el programa.
+            self._token = None  # cualquier falla: la próxima vez se pide un token nuevo
+            if reintentar and e.codigo in (401, 403):
                 return self.tickets_del_dia(fecha, reintentar=False)
             raise
         return valor({"mapValue": doc}).get("tickets", [])
 
+
+    def reconectar(self):
+        """Botón «Sincronizar tablet»: olvida el token y pide uno nuevo en la siguiente lectura."""
+        self._token = None
 
     def _token_fresco(self):
         with open(self.archivo, encoding="utf-8") as f:
@@ -136,6 +144,7 @@ class PalmApp:
                   {"fields": {k: a_firestore(v) for k, v in campos.items()}}, self._token)
         except ErrorPalmApp as e:
             if "already exists" not in str(e).lower():
+                self._token = None  # sesión vencida u otra falla: token nuevo en el siguiente intento
                 raise
 
 

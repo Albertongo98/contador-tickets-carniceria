@@ -15,9 +15,9 @@ from datetime import datetime, timedelta
 
 from conciliar import ANULADO, NO_COBRADO, PENDIENTE, ZONA_TIENDA, a_hora_tienda, conciliar
 
-GRACIA = timedelta(minutes=3)        # Tablero en rojo. Imprimir → cobrar (8,159 tickets sep–nov 2026): mediana 1.2 min,
-                                     # p90 2.8, p95 3.6: ~11 al día pasan de 3 min, se quitan solos al cobrarse.
-AVISO_DUENA = timedelta(minutes=8)   # notificación a la dueña (no se retira): >8 min solo 0.6 % (<1 falsa al día).
+GRACIA = timedelta(minutes=5)        # Tablero en rojo (era 3; el dueño lo subió a 5 el 26-nov-2026). Imprimir → cobrar
+                                     # (8,159 tickets sep–nov 2026): mediana 1.2 min, p90 2.8, p95 3.6.
+AVISO_DUENA = timedelta(minutes=10)  # notificación a la dueña (no se retira; era 8, subido a 10 el 26-nov-2026).
 CAMARAS_ANTES, CAMARAS_DESPUES = timedelta(minutes=1), timedelta(minutes=15)
 
 OK = "OK"                            # control escaneado (y cobrado, si se pudo revisar eleventa)
